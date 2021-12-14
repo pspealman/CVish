@@ -5,75 +5,28 @@ erisapfel - "apple of eris, goddess of discord"
 # further processing is used to extract context and sequence.
 
 #change log
-Created on Wed Dec 13 10:08:39 2017
-Updated 01.30.18: in-house release (Center Coach)
-Updated 02.04.18: reduced disco read lookup to be limited to only those cases within split regions
-Updated 02.25.18: added -filter and -load_filter option using pickle 
-Updated 02.25.18: added -localseq to construct local contig assemblies based on splitreads
-Updated 02.25.18: added -realign to align splitread contigs and output context files, such as gffs
-Updated 06.04.18: added -make to run bwa mem and samblaster
-Updated 07.19.18: Cleaned up commands, old commented out code
-Updated 07.19.18: Now allow user to define map quality threshold for aligned reads
-Updated 07.23.18: User controlled gff filtering
-(Internal version: Impossible Grocery)
-Updated 08.03.18: Blastn-short alignment set as only realignment option.
-Updated 08.03.18: added bedGraph generation to -make command
-Updated 08.03.18: added -flank to allow for manual adjustment of filter flanking regions
-Updated 08.20.18: added capacity to handle translocations
-Updated 08.22.18: Added plummet for read depth calculation
-Updated 08.30.18: Added MSA as consensus generation
-Updated 09.09.18: Added -peaks to handle plummet derived peak identification 
-Updated 09.14.18: Added plummet coupled LOF
-(Beta: Informal concept)
-Updated 01.08.19: fixed bug in -filter command that failed if no gff was supplied
-Updated 02.19.19: TEMP VERSION - commented out the velvet step - not only was it slow, the high numbers of split reads were demanding too much memory and causing a seg fault.
-                    Possible fixes - Only pass to velvet when there are too few reads to crash it? Cap and subsample? Remove entirely? Mafft and cons seems to be working well enough.
-                    Other solution - remove velvet entirely.
-Updated 02.22.19: Added the capacity for read depth, deletion detection
-Updated 03.01.19: Corrected read end estimation in mapping step to allow for reads with mulitple soft, hard, etc.
-Updated 03.01.19: Removed redundant no_disco command, replaced with split_only
-Updated 03.03.19: Corrected read depth to handle genomes and chromosomes with large deletions.
-Updated 03.05.19: Added automatic z-score utilization for split read mapping, this is in addition to the previous score threshold option.
-Updated 03.06.19: Support of single-end reads
-Updated 03.08.19: Fixed file input typo in the map step
-(Beta: Resource constant)
-Updated 03.12.19: Added read clustering method - using cdhit
-Updated 03.14.19: Define run directory defaults 
-Updated 03.15.19: Removed LOF
-Updated 03.18.19: Added Resource Management IO
-(Beta: Wonder Mountain)
-Updated 03.19.19: Including discordant reads along with the soft clipped reads
-(Beta: Rough Garden)
-Updated 03.22.19: Changing read clustering to swarm: cdhit used a greedy algorithm that would generate different end cases depending on run condition.
-Updated 03.25.19: Rebuilt the gff component to handle the swarm clustering output
-Updated 03.26.19: Added subroutine to use spades with. 
-(Beta: Tender Soil)
-Updated 04.11.19: Changing the code to support discordant and soft reads broke the read seqeunce data structure. 
-    Looking up paired end fastq from discordant or soft reads doesn't work because the origin fastq (1 or forward vs 2 or reverse)
-    isn't stored in the relevant sam file. This caused about half the reads to originate from the wrong fastq - making a mess of the
-    disco and soft read implementation.
-    Rebuilding the read sequence structure to handle this. 
-
-Updated 04.18.19: Unpredictable behavior from spades and soap. Both seg fault 
-and core dump when given some limited abundances of reads over a region. 
-(Beta: Theory HQ)
-Updated 04.21.19: Reintroducing Mafft post-Swarm to regenerate alignments 
-Updated 04.29.19: Completed rebuild up to ML, fixed degzip naming convention
-Updated 05.09.19: Added unpack bits, we can probably do away with samblaster now
-
 (Initial Release - Public Beta: Rider Theory)
 
-#!
-Future Features
-#!
-___ TODO: Building the ML database
-___ TODO: Add grissette 
+# 12.13.2021
+Version 1.0 (Write Reflection)
+    Change log
+    _x_ 'gff' error
+    _x_ updated requirement list
+    _x_ corrected RPKM
+
 
 @author: Pieter Spealman 
 """
 
-"""
-Requirements samtools, scikit-learn
+"""Requirements :
+bwa/intel   0.7.17
+samtools    1.14
+bedtools    2.29.2
+velvet      1.2.10
+blast+      2.11.0
+samblaster  0.1.26
+mafft       7.475
+emboss      6.6.0
 """
 #reduced_file
 import os
@@ -142,10 +95,8 @@ def demo():
     '')
     print(monolog)
 
-chromo_list = ['NC_001133.9','NC_001134.8','NC_001135.5','NC_001136.10','NC_001137.3','NC_001138.5','NC_001139.9','NC_001140.6', 
-'NC_001141.2','NC_001142.9','NC_001143.9','NC_001144.5','NC_001145.3','NC_001146.8','NC_001147.6','NC_001148.4']
-#chromo_list = ['NC_001136.10','NC_001140.6','NC_001143.9','NC_001144.5'] 
-#chromo_list = ['NC_001143.9'] 
+#chromo_list = ['NC_001133.9','NC_001134.8','NC_001135.5','NC_001136.10','NC_001137.3','NC_001138.5','NC_001139.9','NC_001140.6', 
+#'NC_001141.2','NC_001142.9','NC_001143.9','NC_001144.5','NC_001145.3','NC_001146.8','NC_001147.6','NC_001148.4']
 
 def output_handler(output):
     if len(output.strip()) > 1:
@@ -169,6 +120,13 @@ def handle_outfile(p_output):
 def test():
     monolog = ('=== Currently Testing Erisapfel.py ===')
     print(monolog)
+    
+    monolog = ('\tTesting Step 0. make bwa for demo.fna\n')
+    print(monolog)    
+    bashCommand = ('bwa index demo/input/demo.fna')
+    print(bashCommand)       
+    output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+    
 
     monolog = ('\tTesting Step 1. -make command for ancestor\n')
     print(monolog)    
@@ -309,7 +267,7 @@ used_reads = 0
 filtered_reads = 0
 
 if args.load_filter:
-    region_filter_dict = pickle.load(open(args.load_filter))
+    region_filter_dict = pickle.load(open(args.load_filter, 'rb'))
 
 if args.filter_flanking:
     flank_nt = int(args.filter_flanking)
@@ -713,45 +671,63 @@ def parse_brks(break_file_name, each_type):
                 
     brks.close()
     
-def unpackbits(x,num_bits):
+def unpackbits(x,runmode='upb'):
     #TODO replace the unpack bits functions
-    xshape = list(x.shape)
-    x = x.reshape([-1,1])
-    to_and = 2**np.arange(num_bits).reshape([1,num_bits])
-    upb = (x & to_and).astype(bool).astype(int).reshape(xshape + [num_bits])
-
-    #0  (rp)    read_paired
-    #1  (rmp)    read_mapped_in_proper_pair
-    #2  (ru)    read_unmapped
-    #3  (mu)    mate_unmapped
-    #4  (rrs)    read_reverse_strand
-    #5  (mrs)    mate_reverse_strand
-    #6  (fip)    first_in_pair
-    #7  (sip)    second_in_pair
-    #8  (npa)    not_primary_alignment
-    #9  (rfp)    read_fails_platform
-    #10 (pcr)    read_is_PCR_or_optical_duplicate
-    #11 (sa)    supplementary_alignment
+    #    
+    #0  1    0x1   (rp)    read_paired
+    #1  2    0x2   (rmp)   read_mapped_in_proper_pair
+    #2  4    0x4   (ru)    read_unmapped
+    #3  8    0x8   (mu)    mate_unmapped
+    #4  16   0x10  (rrs)   read_reverse_strand
+    #5  32   0x20  (mrs)   mate_reverse_strand
+    #6  64   0x40  (fip)   first_in_pair
+    #7  128  0x80  (sip)   second_in_pair
+    #8  256  0x100 (npa)   not_primary_alignment
+    #9  512  0x200 (rfp)   read_fails_platform
+    #10 1024 0x400 (pcr)   read_is_PCR_or_optical_duplicate
+    #11 2058 0x800 (sa)    supplementary_alignment
+     
+    upb = []
     
-    """ DISCORDANT definition (from samblaster)
-        Both side of the read pair are mapped (neither FLAG 0x4 or 0x8 is set).
-        The properly paired FLAG (0x2) is not set.
-        Note: We implemented an additional criteria to distinguish between strand re-orientations and distance issues
-        Strand Discordant reads must be both on the same strand.
-    """
+    for exp in range(11,-1,-1):
+        bit = 2**exp
         
-    """ SPLIT READS
-        Identify reads that have between two and --maxSplitCount [2] primary and supplemental alignments.
-        Sort these alignments by their strand-normalized position along the read.
-        Two alignments are output as splitters if they are adjacent on the read, and meet these criteria:
-            each covers at least --minNonOverlap [20] base pairs of the read that the other does not.
-            the two alignments map to different reference sequences and/or strands. 
-            the two alignments map to the same sequence and strand, and represent a SV that is at least --minIndelSize [50] in length, 
-            and have at most --maxUnmappedBases [50] of un-aligned base pairs between them.
-        Split read alignments that are part of a duplicate read will be output unless the -e option is used.
-    """
+        if (x - bit) >= 0:
+            upb.append(1)
+            x-=(bit)
+        else:
+            upb.append(0)
+
+    if runmode == 'upb':
+        return(upb[:8])
     
-    return(upb) 
+    # psb -> pseudo-samblaster
+    if runmode == 'psb':
+        """ DISCORDANT definition (from samblaster)
+            Both side of the read pair are mapped (neither FLAG 0x4 or 0x8 is set).
+            The properly paired FLAG (0x2) is not set.
+            Note: We implemented an additional criteria to distinguish between strand re-orientations and distance issues
+            Strand Discordant reads must be both on the same strand.
+        """
+            
+        """ SPLIT READS
+            Identify reads that have between two and --maxSplitCount [2] primary and supplemental alignments.
+            Sort these alignments by their strand-normalized position along the read.
+            Two alignments are output as splitters if they are adjacent on the read, and meet these criteria:
+                each covers at least --minNonOverlap [20] base pairs of the read that the other does not.
+                the two alignments map to different reference sequences and/or strands. 
+                the two alignments map to the same sequence and strand, and represent a SV that is at least --minIndelSize [50] in length, 
+                and have at most --maxUnmappedBases [50] of un-aligned base pairs between them.
+            Split read alignments that are part of a duplicate read will be output unless the -e option is used.
+        """
+    
+        psb = upb[::-1]
+        return(psb)
+        # if (psb[1] == 0) and (psb[2] == 0) and (psb[3] == 0):
+        #     return('evaluate')
+        
+        # if 
+              
 
 """ Step One """
 if args.make:
@@ -809,8 +785,8 @@ if args.make:
     #command_file.write(ref_fa + ref_gff + infastq_1 + infastq_2 + output_filename)
     command_file.write(ref_fa + infastq_1 + infastq_2 + output_filename)    
     
+    #using samblaster to extract discordant (-d) and split (-s) reads, repeat reads are excluded (-e) 
     if (end_is == 'int') or (end_is == 'interleaved'):   
-        #using samblaster to extract discordant (-d) and split (-s) reads, repeat reads are excluded (-e) 
         outline = ('bwa mem -M -t 16 -p ${genome_fa} ${fastq_1} | samblaster -M -e -d ${output_file}_discordant.sam -s ${output_file}_split.sam | samtools sort -@16 -o ${output_file}.bam\n')
         command_file.write(outline)
     
@@ -1020,8 +996,9 @@ if args.depth_analysis:
             infile_name = resource_dict['discordant_file']
         if each_type == 'soft':
             infile_name = resource_dict['soft_file']
-            
-        print('\nProcessing sample {}...').format(each_sample)
+        
+        outline = ('\nProcessing sample {}...').format(each_sample)
+        print(outline)
         
         if each_type == 'soft':
             run_soft(bam_file, soft_sam_file, soft_file)
@@ -1044,7 +1021,7 @@ if args.depth_analysis:
         print(outline)
         
         if total_reads > 0:
-            rpkm = lambda x: float(150*int(x)*10^9)/float(total_reads)            
+            rpkm = lambda x: float(150*int(x)*10**9)/float(total_reads)            
         else:
             1/0
             rpkm = lambda x: float(x)
@@ -1086,7 +1063,13 @@ if args.peaks:
     read_type_list = resource_dict['read_types']
     
     each_sample = resource_dict['run_name']
+    
+    chromo_size_p = pickle_loader(resource_dict['chromo_size'], 'dict')
 
+    chromo_list = []
+    for chromo in chromo_size_p:
+        chromo_list.append(chromo)     
+        
     if args.CNV_min_length:
         min_length = int(args.CNV_min_length)
     else:
@@ -1142,7 +1125,8 @@ if args.peaks:
         else:
             return(False)
             
-    def build_trace(subz_df, suby_df, each_type):
+    def build_trace(subz_df, suby_df, each_type, c_median, g_median):
+        print('running build_trace')
         
         subz_dict = subz_df.to_dict(orient='index')
         subz_rpkm_dict = {}
@@ -1184,11 +1168,25 @@ if args.peaks:
                         for nt in range(start, stop+1):
                             seed_set.add(nt)
                             
+                        # if (c_median <= 0):
+                        #     print('c_median', c_median)
+                        #     1/0
+                            
                         if (start >= 0) and (stop >= 0):
                             rel_c = depth_median/float(c_median)
                             rel_g = depth_median/float(g_median)
+                            print('rel_c', depth_median, c_median)
                             
-                            outline = ('{chromo}\t{each_type}_depth\tCNV\t{start}\t{stop}\t{rel_c}\t.\t.\tID={chromo}:{start}-{stop};rel_chromosome_RD={rel_c};rel_genome_RD={rel_g};sample={sample}\n').format(chromo=every_chromo, each_type=each_type, start=start, stop=stop, rel_c=round(rel_c,2), rel_g = round(rel_g,2), sample = each_sample)
+                            outline = ('{chromo}\t{each_type}_depth\tCNV'
+                                       '\t{start}\t{stop}\t{rel_c}\t.\t.'
+                                       '\tID={chromo}:{start}-{stop};rel_chromosome_RD={rel_c};rel_genome_RD={rel_g};sample={sample}\n'
+                                       ).format(
+                                           chromo=every_chromo, 
+                                           each_type=each_type, 
+                                           start=start, stop=stop, 
+                                           rel_c=round(rel_c,2), 
+                                           rel_g = round(rel_g,2), 
+                                           sample = each_sample)
                             depth_gff_outfile.write(outline)
                             print(outline)
                             
@@ -1196,7 +1194,8 @@ if args.peaks:
                             
                             depth_dict[locus] = [rel_c, rel_g, depth_std]
 
-    for each_type in read_type_list:        
+    for each_type in read_type_list:
+        print(each_type)
         depth_gff_file_name = ('{}/{}_{}_depth.gff').format(idx_dir, each_sample, each_type)
         depth_gff_outfile = open(depth_gff_file_name,'w')
         
@@ -1205,6 +1204,8 @@ if args.peaks:
     
         pickle_name = ('{}/mpileup_{}_{}.p').format(pickles_dir, each_sample, each_type)
         mpileup_df = pickle_loader(pickle_name, 'df')
+        #print(mpileup_df.head())
+        #1/0
                 
         zscore_read_type = ('{}_zscore_median').format(each_type)
         g_median = resource_dict[zscore_read_type]
@@ -1212,12 +1213,14 @@ if args.peaks:
         g_std = resource_dict[zscore_read_type]
                         
         outline = ('Global Median:\t{}\nGlobal Std:\t{}\n').format(g_median,g_std)
-        print(outline)
+        #print(outline)
+        #1/0
         
         for every_chromo in chromo_list:
-            
+            print('chromo', every_chromo)
             m_chromo_df = mpileup_df.loc[mpileup_df["chromo"] == every_chromo]
-                        
+            print(m_chromo_df.head())
+            #1/0
             fzero = m_chromo_df.replace(0, np.NaN)
             c_median = fzero["ct"].median()
             c_std = fzero["ct"].std()
@@ -1248,7 +1251,7 @@ if args.peaks:
             subz_df = m_chromo_df.loc[(mpileup_df["ct"] >= (c_median + 3*c_std))]
             suby_df = m_chromo_df.loc[mpileup_df["ct"] >= (c_median + c_std)]
             
-            build_trace(subz_df, suby_df, each_type)
+            build_trace(subz_df, suby_df, each_type, c_median, g_median)
             
             if each_type == 'RD':
                 subz_df = m_chromo_df.loc[(mpileup_df["ct"] <= (c_median - 3*c_std))]
@@ -1256,7 +1259,7 @@ if args.peaks:
                 suby_df = m_chromo_df.loc[mpileup_df["ct"] <= (c_median - c_std)]
                 suby_df = m_chromo_df.loc[(mpileup_df["ct"]) == 0]
                 
-                build_trace(subz_df, suby_df, each_type)
+                build_trace(subz_df, suby_df, each_type, c_median, g_median)
     
         depth_gff_outfile.close()
         chromo_gff_outfile.close()
@@ -1412,7 +1415,7 @@ if args.map_reads:
             stop = int(line.split('\t')[4])
 
             #section handles flanking and chromosome ends
-            chromo_length = chromo_size_dict[chromo]
+            chromo_length = int(chromo_size_dict[chromo])
             if start-flank_nt > 0:
                 start -= flank_nt
             else:
@@ -1460,7 +1463,11 @@ if args.map_reads:
             if uni_uid_instance not in alignment_map:
                 alignment_map[uni_uid_instance] = [chromo, start, stop, qscore, cigar]
             else:
-                print('uni_uid_instance collision', uni_uid_instance, uid_align, alignment_map[uni_uid_instance])
+                p_chromo = uid_align[0]
+                p_start = uid_align[1]
+                p_stop = uid_align[2]
+                if (p_chromo != chromo) or (p_start != start) or (p_stop != stop):
+                    print('uni_uid_instance collision', uni_uid_instance, uid_align, alignment_map[uni_uid_instance])
         
         return(alignment_map, hypothesis_map, ancestor_filter)
     
@@ -1562,8 +1569,8 @@ if args.map_reads:
         for line in read_file:
             process = False
             ct+=1
-            if (ct % 1000 == 0):
-                print('\t'+str(ct)+' reads processed.')
+            #if (ct % 1000 == 0):
+                #print('\t'+str(ct)+' reads processed.')
             
             if line[0]!='@':                
                 uid = line.split('\t')[0]
@@ -1594,15 +1601,14 @@ if args.map_reads:
                             for nt in range(start,stop):
                                 if nt in loci_set:
                                     process = True
-                                    
+                # if not process:
+                #     print('nothing found')
+                    
                 if process:
-                          
                     """ here we make the origin of the fastq file explicit, first asking is the reads are paired,
                     then asking if they are from the first ('forward') or second ('reverse') fastq files.
                     NOTE: I haven't tested this with interlaced fastq, and I'm not sure how it would work.
-                    """
-                    #TODO : check functionality on interlaced fastq
-                    
+                    """                    
                     if np.unpackbits(np.array([flag], dtype=np.uint8))[-1]==1:
                         if np.unpackbits(np.array([flag], dtype=np.uint8))[-8]==1:
                             fastq_2_list.append(uid)
@@ -1634,6 +1640,8 @@ if args.map_reads:
         pull_from_rd_2 = set()
         
         if runmode == 'split' or runmode == 'discordant':
+            #print(uid_source_dict)
+            
             uni_uid_set = uid_source_dict[runmode]
             
             for uni_uid in uni_uid_set:
@@ -1790,17 +1798,22 @@ if args.map_reads:
 
     print('Refining hypotheses ...')                 
     refined_map = {}
+    uids_that_were_filtered = []
     
     for runmode in read_type_list:
         uni_uid_set = uid_source_dict[runmode]
         
         for uni_uid in uni_uid_set:
             uid = uni_uid.split('.')[0]
-            alignments = hypothesis_map[uid]
-            refined_map = refine_alignment(uni_uid, hypothesis_map[uid], alignment_map, runmode, locus_to_hypo_lookup, refined_map)
-            
+            if uid in hypothesis_map:
+                alignments = hypothesis_map[uid]
+                refined_map = refine_alignment(uni_uid, hypothesis_map[uid], alignment_map, runmode, locus_to_hypo_lookup, refined_map)
+            else:
+                uids_that_were_filtered.append(uid)
+                            
             #q_uid = ('{}_{}').format(runmode, uid)
-    
+    print(len(uids_that_were_filtered))
+    print(uids_that_were_filtered[:6])
     #define outputs
     break_tab = ('{}/break_bt.tab').format(idx_dir)
     break_bed = ('{}/break_bd.bed').format(idx_dir)
@@ -1964,7 +1977,7 @@ if args.make_filter:
                 
         filter_file.close()
         
-    def parse_tab(tab_file):
+    def parse_tab(tab_file, anc_QC_list):
         anc_tab = open(tab_file)
         
         for line in anc_tab:
@@ -1988,20 +2001,24 @@ if args.make_filter:
             if (s_ct == 0) and (score >= 3*min_score):
                 anc_QC_list.append(breakpoint_name)
                 populate_filter_dict(chromo, start, stop, breakpoint_name)
-        anc_tab.close()
                 
-    def parse_bed(bed_file):
-        anc_bed = open(bed_file)
+        anc_tab.close()
         
-        for line in anc_bed:
+        return(anc_QC_list)
+                
+    def parse_bed(bed_file, source):
+        in_bed = open(bed_file)
+        
+        for line in in_bed:
             chromo = line.split('\t')[0]
             start = int(line.split('\t')[1])
             stop = int(line.split('\t')[2])
-            breakpoint_name = line.split('\t')[3]
+            breakpoint_name = line.split('\t')[3] + '_' + source
             
-            if breakpoint_name not in anc_QC_list:
-                populate_filter_dict(chromo, start, stop, breakpoint_name)
-        anc_bed.close()
+            #if breakpoint_name not in anc_QC_list:
+            populate_filter_dict(chromo, start, stop, breakpoint_name)
+        
+        in_bed.close()
 
     if args.run_name:
         break_tab = ('{}/break_bt.tab').format(idx_dir)
@@ -2029,7 +2046,7 @@ if args.make_filter:
             else:
                 source_name = each
             
-            parse_tab(each)
+            anc_QC_list = parse_tab(each, anc_QC_list)
                     
         print('Filtering '+str(len(anc_QC_list)))
         print(anc_QC_list)
@@ -2040,6 +2057,8 @@ if args.make_filter:
                 source_name = each.rsplit('/',1)[1]
             else:
                 source_name = each
+                
+            parse_bed(each, source_name)
     
     print('Number of filtered elements:')
     print(len(region_name_dict))
@@ -2059,8 +2078,8 @@ if args.make_filter:
     pickle_out = ("{}{}").format(output_dir, output_file)
     pickle.dump(filter_region_dict, open(pickle_out, 'wb'))
 
-    pickle_out = ("{}_filter.p").format(pickles_dir)
-    pickle.dump(filter_region_dict, open(pickle_out, 'wb'))
+    # pickle_out = ("{}_filter.p").format(pickles_dir)
+    # pickle.dump(filter_region_dict, open(pickle_out, 'wb'))
 
 def check_coverage(source, prefilter_file_name, contig_seq_dict):      
     process = False
@@ -2075,8 +2094,7 @@ def check_coverage(source, prefilter_file_name, contig_seq_dict):
                     process=True
                     seq_str=''
                     node_name = source+'_'+str(int(eval_cov))
-                    #node_name = prefilter_file_name.strip()+'_'+str(int(eval_cov))
-
+                    
         if line[0]!= '>' and process:
             seq_str += line.strip()
             
@@ -2084,7 +2102,7 @@ def check_coverage(source, prefilter_file_name, contig_seq_dict):
 
     if len(seq_str)>1:
         contig_seq_dict[node_name]=seq_str
-        addend = True
+        #addend = True
         
     print('node name '+str(node_name))
     
@@ -2278,9 +2296,6 @@ def score_uids(hypo_id, gff_line, gff_score_dict, gff_uni_uid_dict):
     
 def define_alignment(gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict, best_uid_dict):
     
-    #gff_uid_dict[reduced_base] = hypo_id_set
-    # ('hypo:636_638_right:3970283810057725169', set(['hypo:636_638_right:3970283810057725169_0']))
-
     """Remove duplicates gff calls"""
     gff_score_dict = {}
     gff_uni_uid_dict = {}
@@ -2305,151 +2320,12 @@ def define_alignment(gff_list_dict, gff_rank_dict, blast_read_aligned_sections_d
         gff_list.append(line)       
     
     return(gff_list)
-    
-#    """Find the highest scoring gff for each part of the aligned contig"""
-#    #Here we are taking the sum of all aligned components instead of just the top aligner
-#    #we assign those values to each nucleotide along the read. 
-#    
-#    gff_list = []
-#    best_aligned_list = []
-#    
-#    for reduced_base, hypo_id_set in gff_uid_dict.items():
-#        base_uid_dict = {}
-#        
-#        for hypo_id in hypo_id_set:
-#            if hypo_id in blast_read_aligned_sections_dict:
-#                aligned_region_set = blast_read_aligned_sections_dict[hypo_id]
-#                print('aligned_region_set', aligned_region_set)
-#                print(hypo_id)
-#                1/0
-#                #'hypo:636_638_right:3970283810057725169.30'
-#                bit_score = sum(gff_rank_dict[hypo_id])
-#                for each_set in aligned_region_set:
-#                    for each_nt in each_set:
-#                        if each_nt in base_uid_dict:
-#                            other_bit_score = sum(gff_rank_dict[base_uid_dict[each_nt]])
-#                            
-#                            if bit_score > other_bit_score:
-#                                base_uid_dict[each_nt]=hypo_id
-#                        else:
-#                            base_uid_dict[each_nt]=hypo_id
-#            else:
-#                #not sure this ever happens
-#                print(reduced_base, hypo_id_set)
-#                1/0
-#                #best_aligned_list.append(uid)
-#        
-#        nt_list=[]        
-#        for each_nt, hypo_id in base_uid_dict.items():
-#            nt_list.append(each_nt)
-#            
-#        nt_list.sort()
-#        
-#        for each_nt in nt_list:
-#            print(each_nt, base_uid_dict[each_nt])
-#        
-#        for each_nt, hypo_id in base_uid_dict.items():
-#            if hypo_id not in best_aligned_list:
-#                best_aligned_list.append(hypo_id)
-#                        
-#    best_global_list = []                
-#    for each_hypo in best_aligned_list:
-#        hypo_id = each_hypo.split(':')[1]
-#        
-#        if hypo_id not in best_global_list:
-#            best_global_list.append(hypo_id)
-#            gff_list.append(gff_uni_uid_dict[hypo_id])
-#            
-#    print(gff_list)
-#    #parsed_gff_list = parse_type(gff_list)
-#    
-#    return(output_list)
-#    #return(parsed_gff_list)
-    
+        
 def make_range_set(start, stop):
     temp_set = set()
     for each in range((start-overlap_mask),(stop+overlap_mask)):
         temp_set.add(each)
-    return(temp_set)
-
-#def parse_type(gff_list):
-#    ct=0
-#    storage_dict = {}
-#    temp_dict = {}
-#    diagnosis_dict = {}
-#    output_list = []
-#    
-#    for each in gff_list:
-#        each = each.strip()
-#        chromo, erisapfel, a_split, start, stop, dot, sign, score, deets = each.split('\t')
-#        start = int(start)
-#        stop = int(stop)
-#        
-#        if 'node_uid=' in deets:
-#            node_id = deets.split('node_uid=')[1].split(';')[0].split(',')[0]
-#        else:
-#            node_id = 'undetermined_node'
-#        if 'orient=' in deets:           
-#            orient = deets.split('orient=')[1].split(';')[0]
-#        else:
-#            orient = '.'
-#            
-#        storage_dict[ct] = each
-#        temp_dict[ct] = (node_id, chromo, start, stop, sign, orient)
-#        diagnosis_dict[ct] = ''
-#        ct+=1
-#    
-#    for q_ct, q_deets in temp_dict.items():
-#        if 'discordant' in q_deets[0]:
-#            q_mode = q_deets[0].split('_')[0]
-#            q_node = q_deets[0].split('_')[2]
-#        
-#        if 'discordant' not in q_deets[0]:
-#            q_mode = q_deets[0].split('_')[0] 
-#            q_node = q_deets[0].split('_')[1]
-#            
-#        for s_ct, s_deets in temp_dict.items():
-#            if q_ct != s_ct:
-#                if 'discordant' in s_deets[0]:
-#                    s_mode = s_deets[0].split('_')[0] 
-#                    s_node = s_deets[0].split('_')[2]   
-#                
-#                if 'discordant' not in s_deets[0]:
-#                    s_mode = s_deets[0].split('_')[0]
-#                    s_node = s_deets[0].split('_')[1]
-#               
-#                if q_node == s_node:
-#                    if q_deets[1] != s_deets[1]:
-#                        diagnosis_dict[q_ct] += '!transposition'
-#                    else:
-#                        if q_mode == s_mode:
-#                            q_range_set = make_range_set(q_deets[2], q_deets[3])
-#                            s_range_set = make_range_set(s_deets[2], s_deets[3])
-#                            
-#                            overlap_test = True
-#                            for each_q in q_range_set:
-#                                if each_q in s_range_set:
-#                                    if overlap_test and (q_deets[5] != s_deets[5]):
-#                                        diagnosis_dict[q_ct] += '!ODIRA_CNV'
-#                                        overlap_test = False
-#                                    if overlap_test and (q_deets[5] == s_deets[5]):
-#                                        diagnosis_dict[q_ct] += '!local_rearrangement_or_CNV'
-#                                        overlap_test = False
-#                                    
-#                            if overlap_test:
-#                                diagnosis_dict[q_ct] += '!nonlocal_rearrangement_or_CNV'
-#                        
-#    for each_ct, gff_line in storage_dict.items():
-#        diagnosis_str = diagnosis_dict[each_ct]
-#        if diagnosis_str == '':
-#            diagnosis_str = 'potential palindrome'
-#            
-#        diagnosis_str = diagnosis_str.replace('!',',')
-#        outline = (';type="{}"\n').format(diagnosis_str)
-#        gff_line += outline
-#        output_list.append(gff_line)
-#        
-#    return(output_list)        
+    return(temp_set)     
     
 """ Step Six """
 if args.build_sequence:
@@ -2495,274 +2371,6 @@ if args.build_sequence:
         
     break_tab = ('{}/break_bt.tab').format(idx_dir)   
     dbreak_tab = ('{}/dbreak_dbt.tab').format(idx_dir)
-#    soft_file = ('{}/{}.bam').format(bam_dir, output_file)
-                    
-#    if args.break_tab:
-#        break_tab = args.break_tab
-    
-#    if args.soft_file:
-#        soft_file = args.soft_file
-
-#    def build_soft(locus):
-#        # locus format: "NC_001143.9:530419-530728"
-#            
-#        cmd_line = ('samtools view {} {} > focus.sam').format(soft_file, locus)
-#        output = subprocess.check_output([cmd_line],stderr=subprocess.STDOUT,shell=True)
-#        print(output)
-#                    
-#        fastq_1_list = [] 
-#        fastq_2_list = []
-#        
-#        infile = open('focus.sam')
-#        for line in infile:
-#            if line[0] != '@':
-#                cigar = line.split('\t')[5]
-#                if '*' not in cigar: 
-#                    size = parse_cigar(cigar, 'non-matching')
-#                    if size >= 10:                        
-#                        uid = line.split('\t')[0]
-#                        flag = int(line.split('\t')[1])
-#                                                
-#                        if np.unpackbits(np.array([flag], dtype=np.uint8))[-8]==1:
-#                            fastq_2_list.append(uid)
-#                        else:
-#                            fastq_1_list.append(uid)
-#        infile.close()
-#        return(fastq_1_list, fastq_2_list)
-
-#    def soft_from_fasta(uid_list, filename, uniuid_to_seq_dict, uniuid_to_phred_dict, outfile_name, runmode):
-#        outfile =  open(outfile_name,'a')
-#        infile = open(filename)
-#        ct = 3 
-#        for line in infile:
-#            ct+=1
-#            
-#            if line[0] == '@':
-#                uid = line.split('@')[1].split(' ')[0]
-#                if uid in uid_list:
-#                    ct = 0
-#                    
-#            if ct == 1:
-#                
-#                seq = line.strip()
-#                name = ('{}_{}').format(uid,runmode)
-#                outline = ('>{}\n{}\n').format(name,seq)
-#                outfile.write(outline)
-#                
-#                if name not in uniuid_to_seq_dict:
-#                    uniuid_to_seq_dict[name] = seq
-#                    
-#                if name not in uniuid_to_phred_dict:
-#                    uniuid_to_phred_dict[name] = seq
-#                    
-#        infile.close()
-#        outfile.close()
-#    
-#        return(uniuid_to_seq_dict, uniuid_to_phred_dict)
-        
-#    def remove_duplicate_reads(filename, outfile_name):
-#        temp_dict = {}
-#        
-#        infile = open(filename)
-#        for line in infile:
-#            line = line.strip()
-#            if line[0] == '>':
-#                uid = line.split('>')[1].split(' ')[0]
-#            else:
-#                seq = line.strip()
-#                if uid in temp_dict:
-#                    oseq = temp_dict[uid]
-#                    
-#                    if seq != oseq:
-#                        print(uid, seq, oseq)
-#                        1/0
-#                else:
-#                    temp_dict[uid] = seq
-#            
-#        infile.close()
-#
-#        outfile =  open(outfile_name,'w')
-#        ct = 0
-#        for uid, seq in temp_dict.items():
-#            outline = ('>{}\n{}\n').format(uid,seq)                    
-#            outfile.write(outline)
-#            ct+=1
-#        outfile.close()
-#        
-#        process = False
-#        if ct > 1:
-#            process = True
-#            
-#        return(process)        
-        
-#    def parse_kmer(seq_1, seq_2):
-#        minmer = 25
-#        start = 0
-#        mismatch_nt = 0
-#        longest_kmer = [0,0,0]
-#        
-#        for stop in range(minmer,(len(seq_1)+1)):
-#            inmer = True
-#            kmer = seq_1[start:stop]
-#            
-#            if kmer in seq_2:
-#                for each_int in range(len(seq_1)-(stop)):
-#                    nkmer = seq_1[start:(stop+each_int)+1]
-#    
-#                    if nkmer not in seq_2 and inmer:
-#                        inmer = False
-#                        mismatch_nt = (stop+each_int)
-#                        mmer = (seq_1[start:mismatch_nt])
-#                        if len(mmer) >  longest_kmer[0]:
-#                            longest_kmer = [len(mmer), start, mismatch_nt]
-#                if inmer:
-#                    inmer = False
-#                    mismatch_nt = (len(seq_1))
-#                    mmer = (seq_1[start:mismatch_nt])
-#                    if len(mmer) >  longest_kmer[0]:
-#                        longest_kmer = [len(mmer), start, mismatch_nt]
-#                      
-#            start+=1
-#        
-#        if longest_kmer[0] >= minmer:
-#            split_mer = seq_1[longest_kmer[1]:longest_kmer[2]]
-#            other_split = seq_2.split(split_mer)
-#            
-#            if len(other_split) == 2:
-#                mismatch_ct = 0
-#                seq2_start = len(other_split[0])
-#                seq2_stop = len(seq_1)
-#                internal_seq = seq_2[(seq2_start-longest_kmer[1]):(seq2_start+seq2_stop)]
-#                for each in range(len(seq_1)):
-#                    if seq_1[each] != internal_seq[each]:
-#                        mismatch_ct += 1 
-#            else:
-#                mismatch_ct = 2
-#                return(False)
-#            
-#            if mismatch_ct < 2:
-#                return(True)
-#            else:
-#                return(False)
-#        else:
-#            return(False)
-        
-#    def compare_two_sequences(seq1, seq2, mode):
-#        if mode == 'inline':
-#            index = 0
-#            if len(seq1) < len(seq2):
-#                if seq1 in seq2:
-#                    return(len(seq1), mode)
-#                else:
-#                    if parse_kmer(seq1, seq2):
-#                        
-#            if len(seq1) > len(seq2):
-#                if seq2 in seq1:
-#                    return(len(seq2), mode)
-#                        
-#            if len(seq1) == len(seq2):
-#                if seq1 == seq2:
-#                    index = len(seq1)
-#                    return(index, mode)
-#                        
-#            return(index, mode)
-#            
-#        if mode == 'cross':                
-#            for step in range(len(seq1)-9):
-#                step_seq = seq1[:-1*(step+1)]
-#                if step_seq in seq2:
-#                    if seq2.count(step_seq) != 1:
-#                        #note - that in this event it is impossible to discern the nature of the overlap,
-#                        #as such we for the comaprison to fail 
-#                        return(0, mode)
-#                    else:
-#                        if len(seq2.split(step_seq)[1]) > 0:
-#                            return(0, mode)
-#                        else:
-#                            return(len(step_seq), mode)
-#            return(0, mode)
-
-    #def combine_otu(raw_otu_dict, otu_hash_lookup, otu_name_lookup, hash_ct):  
-#    def combine_otu(otu_dict, uid_hash):            
-#              
-#        reduced = False
-#
-#        leader = [10,'']
-#        for nhash, seq in otu_dict.items():
-#            #nhash_deets = uid_hash[nhash]
-#            rchash = uid_hash[nhash][2]
-#                            
-#            for compare_hash, compare_seq in otu_dict.items():
-#                if (nhash != compare_hash) and (rchash != compare_hash):
-#                    for mode in ['inline','cross']:
-#                        index, mode = compare_two_sequences(seq, compare_seq, mode)
-#                        if (index > leader[0]):
-#                            reduced = True
-#                            leader = [index, nhash, compare_hash, mode]
-#        if not reduced:
-#            #return(reduced, raw_otu_dict, otu_hash_lookup, otu_name_lookup, hash_ct)
-#            return(reduced, otu_dict, uid_hash)
-#            
-#        if reduced:
-#            size, nhash, compare_hash, mode = leader
-#            name, score, rchash = uid_hash[nhash]
-#            c_name, c_score, c_rchash = uid_hash[compare_hash]
-#            
-#            seq1 = otu_dict[nhash]
-#            seq2 = otu_dict[compare_hash]
-#
-#            new_score = int(score)+int(c_score)
-#            new_name = name + '+' + c_name
-#            new_nhash = hash(new_name)
-#            new_rchash = hash(new_name + '=rc')
-#            uid_hash[new_nhash] = [new_name, new_score, new_rchash]
-#            uid_hash[new_rchash] = [new_name, new_score, new_nhash]
-#            
-#            #ootu_dict = len(otu_dict)
-#            
-#            for each in [nhash, compare_hash, rchash, c_rchash]:
-#                if each in otu_dict:
-#                    del otu_dict[each]
-#
-#            if mode == 'inline':
-#                if len(seq1) == max(seq1,seq2):
-#                    new_seq = seq1
-#                else:
-#                    new_seq = seq2
-#
-#            if mode == 'cross':
-#                new_seq = seq2+seq1[size:]
-#                
-##            outline=('>leader{}::{}::{}\n>seq1:\n{}\n>seq2:\n{}\n>new_seq:\n{}\n').format(leader,ootu_dict,len(otu_dict), seq1, seq2, new_seq)
-##            reduced_file.write(outline)
-#                
-#            otu_dict[new_nhash]=new_seq
-#            otu_dict[new_rchash]=reverse_compliment(new_seq)
-#                        
-#            if len(otu_dict) < 2:
-#                reduced = False
-#            #                
-#            #return(reduced, raw_otu_dict, otu_hash_lookup, otu_name_lookup, hash_ct)
-#            return(reduced, otu_dict, uid_hash)
-                
-#    def get_json_names(output_dir, output_file, hypo, cluster):
-#        try: 
-#            spades_file = open(spades_file_name)
-#            spades_file.close()
-#            
-#            spades_long_name = ('{}{}/cluster/hypo_{}_spades_{}_long_blastn.json').format(output_dir, output_file, hypo, cluster)
-#            spades_short_name = ('{}{}/cluster/hypo_{}_spades_{}_short_blastn.json').format(output_dir, output_file, hypo, cluster)
-#            
-#        except:
-#            print('warning: no scaffolds for cluster ...')
-#            spades_long_name = ''
-#            spades_short_name = ''
-#            
-#        cluster_long_name = ('{}{}/cluster/hypo_{}_cluster_{}_long_blastn.json').format(output_dir, output_file, hypo, cluster)   
-#        
-#        cluster_short_name = ('{}{}/cluster/hypo_{}_cluster_{}_short_blastn.json').format(output_dir, output_file, hypo, cluster)         
-#        
-#        return([spades_long_name, spades_short_name, cluster_long_name, cluster_short_name])
             
     def parse_msa_file(filename):
         
@@ -2773,13 +2381,12 @@ if args.build_sequence:
         
         for line in infile:
             if line[0] == '>':
+                name = (line.split('>')[1].split('_')[0].strip())
+                hname = str(hash(name))
                 
                 if seq != '':
                     msa_dict[hname] = seq
         
-                name = (line.split('>')[1].split('_')[0].strip())
-                hname = str(hash(name))
-                #print('def', type(hname))
                 hash_to_name[hname] = name
                 
                 seq = ''
@@ -2822,7 +2429,7 @@ if args.build_sequence:
         
         for compare, deets in distance_dict.items():
             mismatch, match = deets
-            if ((mismatch <= 1) or ((mismatch/float(match)) <= 0.04)) and (match >= 25):
+            if ((mismatch <= 1) or ((mismatch/max(1,float(match))) <= 0.04)) and (match >= 25):
                 name1, name2 = compare.split('_')
                 
                 if (name1 in name_to_cluster_dict) and (name2 in name_to_cluster_dict):
@@ -2871,8 +2478,6 @@ if args.build_sequence:
     
             if len(hnames) > 1:
                 for hname in hnames:
-                    print(type(hname))
-                    print(hash_to_name)
                     name = hash_to_name[hname]
                     seq = msa_dict[hname].replace('-','')
                     
@@ -2918,9 +2523,7 @@ if args.build_sequence:
                 print(outline)
             
             temp_seq_file_name = ('{}/{}_temp_seq.fa').format(temp_dir, hypo)
-            print('a')
             make_fasta(temp_seq_file_name, hypo, qname_list)
-            print('b')
             
             msa_dict, hash_to_name = parse_msa_file(temp_seq_file_name)
             
@@ -2954,7 +2557,7 @@ if args.build_sequence:
                 output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
                 gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict = gff_from_json(json_long_file_name, contig_seq_dict, gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict)
 
-        resource_pickle_name = ('{}/gff_list_dict.p').format(pickles_dir)         
+        resource_pickle_name = ('{}/gff_list_dict.p').format(pickles_dir)
         with open(resource_pickle_name, 'wb') as file:
             pickle.dump(gff_list_dict, file)
             
@@ -2973,22 +2576,22 @@ if args.build_sequence:
         resource_pickle_name = ('{}/gff_uid_dict.p').format(pickles_dir)         
         with open(resource_pickle_name, 'wb') as file:
             pickle.dump(gff_uid_dict, file)
+    
+    pickle_in = ('{}/gff_list_dict.p').format(pickles_dir)
+    gff_list_dict = pickle_loader(pickle_in, 'dict')
+
+    pickle_in = ('{}/gff_rank_dict.p').format(pickles_dir)
+    gff_rank_dict = pickle_loader(pickle_in, 'dict')
+
+    pickle_in = ('{}/blast_read_aligned_sections_dict.p').format(pickles_dir)
+    blast_read_aligned_sections_dict = pickle_loader(pickle_in, 'dict')
+    
+    pickle_in = ('{}/blast_genome_aligned_regions_dict.p').format(pickles_dir)
+    blast_genome_aligned_regions_dict = pickle_loader(pickle_in, 'dict')
         
-    pickle_out = ('{}/gff_list_dict.p').format(pickles_dir)
-    gff_list_dict = pickle.load(open(pickle_out))
-    
-    pickle_out = ('{}/gff_rank_dict.p').format(pickles_dir)
-    gff_rank_dict = pickle.load(open(pickle_out))
-    
-    pickle_out = ('{}/blast_read_aligned_sections_dict.p').format(pickles_dir)
-    blast_read_aligned_sections_dict = pickle.load(open(pickle_out))
-    
-    pickle_out = ('{}/blast_genome_aligned_regions_dict.p').format(pickles_dir)
-    blast_genome_aligned_regions_dict = pickle.load(open(pickle_out))
-    
-    pickle_out = ('{}/gff_uid_dict.p').format(pickles_dir)
-    gff_uid_dict = pickle.load(open(pickle_out))
-    
+    pickle_in = ('{}/gff_uid_dict.p').format(pickles_dir)
+    gff_uid_dict = pickle_loader(pickle_in, 'dict')
+        
     print('Protential breakpoints: '+ str(len(gff_uid_dict)))
     gff_list = define_alignment(gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict, best_uid_dict)
        
@@ -3474,6 +3077,3 @@ if args.breakpoints:
     """
     End of script
     """
-
-
-
