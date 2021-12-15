@@ -36,7 +36,7 @@ _Important note for NYU Prince users:
  * Analysis of discordant reads requires Paired End reads.
 
 ### -depth
-* Purpose: Calculates read depth statistics over chrosomes. Negative filtering can be performed wherein reads within a given region are not counted. This is helpful for removing aberrant depths generated from multiple copy regions such as transposons and rDNA or low-complexity regions such as telomeres.  
+* Purpose: Calculates read depth statistics over chrosomes. Positive filtering can be performed, wherein only reads within a given region are counted. This is helpful for removing aberrant depths generated from multiple copy regions such as transposons and rDNA.  
 * Format: 
  ```
 python erisapfel.py -depth -filter_bed <filter_bed_format_file> -run_name <output prefix>
@@ -70,7 +70,8 @@ python erisapfel.py -depth -filter_bed <filter_bed_format_file> -run_name <outpu
 --->
 
 ### -filter
-* Purpose: Sequencing artifacts can make identification of breakpoints difficult. By constructing a filter using the ancestor (ie. a genetic background that lacks CNVs) these artifacts can be identified and removed before further analysis. 
+* Purpose: This step generates a filter region pickle file using bed formatted input. These are negative filters, wherein breakpoints within these regions will be removed from further analysis. One may desire to avoid these regions because of highly repetitive sequences (rDNA, Mitochondria) or low-complexity sequences (Telomeres). 
+Sequencing artifacts can make identification of breakpoints difficult. By constructing a filter using a bed file generated using an ancestor (ie. a genetic background that lacks CNVs) these artifacts can be readily identified and removed before further analysis. 
 * Format:
 <!--
 python erisapfel.py -filter -filter_bed /scratch/ps163/erisapfel/filter_telomeres.bed -o ${sample_name}_filter.p
