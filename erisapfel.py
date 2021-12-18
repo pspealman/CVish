@@ -14,6 +14,9 @@ Version 1.0 (Write Reflection)
     _x_ updated requirement list
     _x_ corrected RPKM
 
+Version 1.0.1 (...)
+    _x_ mkdir error
+
 
 @author: Pieter Spealman 
 """
@@ -781,9 +784,13 @@ if args.make:
         infastq_1=('fastq_1={}\n').format(args.fastq_1)
         infastq_2=('fastq_2={}\n').format("")
         
-    output_filename=('output_file={}/{}\n').format(bam_dir, output_file)
+    output_filename=('output_file={bam_dir}/{output_file}\n'
+                     'mkdir -p {bam_dir}\n'
+                     'echo bam_dir {bam_dir}').format(
+        bam_dir=bam_dir, 
+        output_file=output_file)
     #command_file.write(ref_fa + ref_gff + infastq_1 + infastq_2 + output_filename)
-    command_file.write(ref_fa + infastq_1 + infastq_2 + output_filename)    
+    command_file.write(ref_fa + infastq_1 + infastq_2 + output_filename)
     
     #using samblaster to extract discordant (-d) and split (-s) reads, repeat reads are excluded (-e) 
     if (end_is == 'int') or (end_is == 'interleaved'):   
