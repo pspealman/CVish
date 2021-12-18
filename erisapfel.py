@@ -14,8 +14,9 @@ Version 1.0 (Write Reflection)
     _x_ updated requirement list
     _x_ corrected RPKM
 
-Version 1.0.1 (...)
+Version 1.0.4 (...)
     _x_ mkdir error
+    _x_ gzip file handling in subfolders
 
 
 @author: Pieter Spealman 
@@ -526,11 +527,20 @@ def make_fasta(temp_split_seq_file_name, hypo, qname_list):
             
     temp_split_seq_file.close()
     
-def degzip(full_name, file_name):
-    if (full_name == file_name + '.gz') or (full_name == file_name):
-        bashCommand = ('gunzip -c {} > {}').format(full_name, file_name)
-        output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-        print(bashCommand)
+def degzip(full_name, file_name, pre_dir=''):
+    # a lot of this is to ensure that the original fastq is left undisturbed
+    # it would be more elegant to just make a temp directory and copy it there
+    
+    if (full_name == file_name + '.gz') or (full_name == file_name) or (full_name == pre_dir+file_name):
+        if '.gz' not in file_name:
+            bashCommand = ('gunzip -c {} > {}').format(full_name, file_name)
+            output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+            print(bashCommand)
+            
+        if '.gz' in file_name:
+            bashCommand = ('gunzip -c {} > {}').format(full_name, file_name.split('.gz')[0])
+            output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+            print(bashCommand)
         
     else:
         bashCommand = ('cp {} {}.gz').format(full_name, file_name)
@@ -547,11 +557,11 @@ def parse_fastq(fastq_full_name, series_number, qname_lookup, uniuid_to_seq_dict
     print(outline)
     
     if '/' in fastq_full_name:
-        nope_dir, fastq_file_name = handle_outfile(fastq_full_name)
+        pre_dir, fastq_file_name = handle_outfile(fastq_full_name)
         
         if fastq_full_name[-3:]=='.gz':
             #
-            degzip(fastq_full_name, fastq_file_name)
+            degzip(fastq_full_name, fastq_file_name, pre_dir)
             fastq_file_name = fastq_file_name[:-3]
         else:
             bashCommand = ('cp -f {} {}').format(fastq_full_name, fastq_file_name)
