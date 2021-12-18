@@ -786,7 +786,7 @@ if args.make:
         
     output_filename=('output_file={bam_dir}/{output_file}\n'
                      'mkdir -p {bam_dir}\n'
-                     'echo bam_dir $PWD + {bam_dir}').format(
+                     'echo bam_dir $PWD + {bam_dir}\n').format(
         bam_dir=bam_dir, 
         output_file=output_file)
     #command_file.write(ref_fa + ref_gff + infastq_1 + infastq_2 + output_filename)
