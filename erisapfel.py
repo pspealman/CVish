@@ -14,9 +14,10 @@ Version 1.0 (Write Reflection)
     _x_ updated requirement list
     _x_ corrected RPKM
 
-Version 1.0.4 (...)
+Version 1.0.5 (...)
     _x_ mkdir error
     _x_ gzip file handling in subfolders
+    _x_ module access issue with command_file
 
 
 @author: Pieter Spealman 
@@ -782,9 +783,16 @@ if args.make:
     
     command_file_name=('{}_command_file.sh').format(s_path)
     command_file = open(command_file_name,'w')
-    command_file.write('#!/bin/bash\n')
+    command_file.write('module load bwa/intel/0.7.17\n'
+                       'module load samtools/intel/1.14\n'
+                       'module load bedtools/intel/2.29.2\n'
+                       'module load velvet/1.2.10\n'
+                       'module load blast+/2.11.0\n'
+                       'module load samblaster/0.1.26\n'
+                       'module load mafft/intel/7.475\n'
+                       'module load emboss/intel/6.6.0\n\n\n')
     
-    ref_fa=('\tgenome_fa={}\n').format(args.fa_file)
+    ref_fa=('genome_fa={}\n').format(args.fa_file)
     #ref_gff=('\tgenome_gff={}\n').format(args.gff_file)
          
     if (end_is == 'pe') or (end_is == 'paired_end'):
