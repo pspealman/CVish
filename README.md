@@ -5,6 +5,7 @@ _Important note for NYU Prince users:
  Load all necessary modules via:
 	 source module_load.sh_
 
+<!--
 ## How to use:
  For demonstration use:
   ```
@@ -14,6 +15,7 @@ _Important note for NYU Prince users:
  ```
  python erisapfel.py -test
  ```
+--->
 
 ## Commands:
  ### -make
