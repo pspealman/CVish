@@ -14,10 +14,10 @@ Version 1.0 (Write Reflection)
     _x_ updated requirement list
     _x_ corrected RPKM
 
-Version 1.0.5 (...)
+Version 1.0.4 (...)
     _x_ mkdir error
     _x_ gzip file handling in subfolders
-    _x_ module access issue with command_file
+    _x_ -filter argument on depth command now optional
 
 
 @author: Pieter Spealman 
@@ -898,17 +898,20 @@ if args.depth_analysis:
     #if args.run_name:
     #    path = bam_dir
     #    each_sample = output_file
-           
-    if len(args.filter_bed) == 0:
+    if not args.filter_bed:
         filter_by_bed = False
-    else:
-        filter_by_bed = True
-        if len(args.filter_bed):
-            filter_bed = args.filter_bed[0]
-            resource_dict['depth_region_filter']=filter_bed
+        
+    if args.filter_bed:
+        if len(args.filter_bed) == 0:
+            filter_by_bed = False
         else:
-            print('Please only specify a single bed file for filtering')
-            1/0
+            filter_by_bed = True
+            if len(args.filter_bed):
+                filter_bed = args.filter_bed[0]
+                resource_dict['depth_region_filter']=filter_bed
+            else:
+                print('Please only specify a single bed file for filtering')
+                1/0
     
 #    total_reads_dict = {}
 #    read_map_dict = {}
