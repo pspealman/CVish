@@ -173,7 +173,7 @@ def test():
     print(monolog)    
     bashCommand = ('python erisapfel.py -realign -fa demo/input/demo.fna -contigs demo/input/localseq_evo/ -o demo/input/localseq_evo/realign_evo')
     print(bashCommand)       
-    output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+    output_handler(subprocess.check_output([bashCommand],stderr= subprocess.STDOUT,shell=True))
     
 parser = argparse.ArgumentParser()
 #handle help_dialog
@@ -912,17 +912,8 @@ if args.depth_analysis:
             else:
                 print('Please only specify a single bed file for filtering')
                 1/0
-    
-#    total_reads_dict = {}
-#    read_map_dict = {}
-    
+        
     def run_soft(bam_file, soft_sam_file, soft_file):
-        #handling soft_reads
-        #bashCommand = ('samtools view -h {} > {}/temp_global.sam').format(bam_file, bam_dir)
-        #print(bashCommand)
-        #output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-
-        #softfile_name = ('{}{}.sam').format(bam_dir, each_sample)
         is_softfile = open(soft_sam_file,'w')
         
         #sam_file_name = ('{}/temp_global.sam').format(bam_dir)
@@ -939,62 +930,95 @@ if args.depth_analysis:
         infile.close()
         is_softfile.close()
                     
-        bashCommand = ('samtools view -Sb {} -o {}/temp_unsorted.bam').format(soft_sam_file, bam_dir)            
+        # bashCommand = ('module load samtools/intel/1.14')
+        # print(bashCommand)
+        # output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+        
+        bashCommand = ('module load samtools/intel/1.14\n'
+                       'samtools view -Sb {} -o {}/temp_unsorted.bam').format(soft_sam_file, bam_dir)            
         print(bashCommand)
         output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-        bashCommand = ('samtools sort {}/temp_unsorted.bam -o {}').format(bam_dir, soft_file)
+        
+        bashCommand = ('module load samtools/intel/1.14\n'
+                       'samtools sort {}/temp_unsorted.bam -o {}').format(bam_dir, soft_file)
         print(bashCommand)
         output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-        bashCommand = ('samtools index {}').format(soft_file)
+        
+        bashCommand = ('module load samtools/intel/1.14\n'
+                       'samtools index {}').format(soft_file)
         print(bashCommand)
         output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
 
     def run_bedgraph(bam_file, each_sample):
         print('\tRunning bedtools genomecov on '+ str(infile_name) + '...')
-        bashCommand = ('bedtools genomecov -bg -ibam {} > {}{}.bedgraph').format(bam_file, idx_dir, each_sample)
+        #module load bedtools/intel/2.29.2\n
+        
+        # bashCommand = ('source /scratch/ps163/tiny_fy/module_load.sh\n')
+        # print(bashCommand)
+        # output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+
+        bashCommand = ('module load bedtools/intel/2.29.2\n'
+                       'bedtools genomecov -bg -ibam {} > {}{}.bedgraph').format(bam_file, idx_dir, each_sample)
         print(bashCommand)
         output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
 
-    def run_mpileup(infile_name, each_sample, runmode):            
+    def run_mpileup(infile_name, each_sample, runmode):  
+        # bashCommand = ('module load samtools/intel/1.14')
+        # print(bashCommand)
+        # output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+                  
         if runmode == 'RD':
             print('\tRunning samtools to determine sample depth...')
             if filter_by_bed:
-                bashCommand = ('samtools mpileup -B -C 50 -f {} {} -l {} -a -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)        
+                bashCommand = ('module load samtools/intel/1.14\n'
+                               'samtools mpileup -B -C 50 -f {} {} -l {} -a -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)        
             else:
-                bashCommand = ('samtools mpileup -B -C 50 -f {} {} -a -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)                        
+                bashCommand = ('module load samtools/intel/1.14\n'
+                               'samtools mpileup -B -C 50 -f {} {} -a -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)                        
             print(bashCommand)
             output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
 
         if runmode == 'discordant':
             print('\tRunning samtools to determine discordant read depth...')
             if filter_by_bed:
-                bashCommand = ('samtools mpileup -B -C 25 -f {} {} -l {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)            
+                bashCommand = ('module load samtools/intel/1.14\n'
+                               'samtools mpileup -B -C 25 -f {} {} -l {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)            
             else:
-                bashCommand = ('samtools mpileup -B -C 25 -f {} {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)
+                bashCommand = ('module load samtools/intel/1.14\n'
+                               'samtools mpileup -B -C 25 -f {} {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)
             print(bashCommand)
             output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
             
         if runmode == 'split':
             print('\tRunning samtools to determine split read depth...')
             if filter_by_bed:
-                bashCommand = ('samtools mpileup -B -C 10 -f {} {} -l {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)     
+                bashCommand = ('module load samtools/intel/1.14\n'
+                               'samtools mpileup -B -C 10 -f {} {} -l {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)     
             else:
-                bashCommand = ('samtools mpileup -B -C 10 -f {} {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)     
+                bashCommand = ('module load samtools/intel/1.14\n'
+                               'samtools mpileup -B -C 10 -f {} {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)     
             print(bashCommand)            
             output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
             
         if runmode == 'soft':
             print('\tRunning samtools to determine soft clip read depth...')
             if filter_by_bed:
-                bashCommand = ('samtools mpileup -B -C 25 -f {} {} -l {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)            
+                bashCommand = ('module load samtools/intel/1.14\n'
+                               'samtools mpileup -B -C 25 -f {} {} -l {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)            
             else:
-                bashCommand = ('samtools mpileup -B -C 25 -f {} {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)
+                bashCommand = ('module load samtools/intel/1.14\n'
+                               'samtools mpileup -B -C 25 -f {} {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)
             print(bashCommand)
             output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
             
-    def process_bam(infile_name, read_type):        
+    def process_bam(infile_name, read_type):
+        # bashCommand = ('module load samtools/intel/1.14')
+        # print(bashCommand)
+        # output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+        
         print('\tRunning samtools to determine total mapped reads...')
-        bashCommand = ('samtools view -F 0x4 {} | cut -f 1 | sort | uniq | wc -l > temp.ct').format(infile_name)
+        bashCommand = ('module load samtools/intel/1.14\n'
+                       'samtools view -F 0x4 {} | cut -f 1 | sort | uniq | wc -l > temp.ct').format(infile_name)
         print(bashCommand) 
         output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
         
@@ -2514,11 +2538,13 @@ if args.build_sequence:
                 cluster_seq.close()
                 
                 cluster_align_name = ('{temp}/{node_name}_cluster_aligned.msf').format(node_name=node_name, temp=temp_dir)
-                bashCommand = ('mafft --auto --adjustdirection --globalpair --quiet {} > {}').format(cluster_seq_name, cluster_align_name)
+                bashCommand = ('module load mafft/intel/7.475\n'
+                               'mafft --auto --adjustdirection --globalpair --quiet {} > {}').format(cluster_seq_name, cluster_align_name)
                 output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
                 print(bashCommand)
                 
-                bashCommand = ('cons -name {}_{} -plurality 1 {} -outseq {}').format(node_name, len(hnames), cluster_align_name, cluster_seq_name)
+                bashCommand = ('module load emboss/intel/6.6.0\n\n\n'
+                               'cons -name {}_{} -plurality 1 {} -outseq {}').format(node_name, len(hnames), cluster_align_name, cluster_seq_name)
                 output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
                 print(bashCommand)
                 
@@ -2577,11 +2603,13 @@ if args.build_sequence:
                 json_long_file_name = ('{}_long_blastn.json').format(prefix)
                 cluster_seq_name = ('{}_cluster_seq.fa').format(prefix)
                 
-                bashCommand = ('blastn -task "blastn-short" -query {} -subject {fa_file} -outfmt 15 -out {}').format(cluster_seq_name, json_short_file_name, fa_file=fa_file)
+                bashCommand = ('module load blast+/2.11.0\n'
+                               'blastn -task "blastn-short" -query {} -subject {fa_file} -outfmt 15 -out {}').format(cluster_seq_name, json_short_file_name, fa_file=fa_file)
                 output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
                 gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict = gff_from_json(json_short_file_name, contig_seq_dict, gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict)
            
-                bashCommand = ('blastn -query {} -subject {fa_file} -outfmt 15 -out {}').format(cluster_seq_name, json_long_file_name, fa_file=fa_file)
+                bashCommand = ('module load blast+/2.11.0\n'
+                               'blastn -query {} -subject {fa_file} -outfmt 15 -out {}').format(cluster_seq_name, json_long_file_name, fa_file=fa_file)
                 output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
                 gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict = gff_from_json(json_long_file_name, contig_seq_dict, gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict)
 
@@ -3105,3 +3133,6 @@ if args.breakpoints:
     """
     End of script
     """
+
+
+
