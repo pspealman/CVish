@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 erisapfel - "apple of eris, goddess of discord"
-# Purpose: Uses split, discordant, and soft reads to identify genomic breakpoints
+# Purpose: Uses split and discordant reads to identify genomic breakpoints
 # further processing is used to extract context and sequence.
 
 #change log
@@ -14,11 +14,24 @@ Version 1.0 (Write Reflection)
     _x_ updated requirement list
     _x_ corrected RPKM
 
-Version 1.0.4 (...)
+Version 1.1 (Snatch Hen) 01.19.2022
     _x_ mkdir error
     _x_ gzip file handling in subfolders
     _x_ -filter argument on depth command now optional
-
+    _x_ corrected module integration
+    _x_ removed soft reads 
+    _x_ Mobile genetic element (MGE) mapping
+    _x_ Added 'separate_by_strand' option
+        This seperates reads into new sam/bam files based on strand identificaiton.
+        Visualization option
+        
+Version 1.2 (Area Agenda) 02.23.2022
+    _x_ ML model support for MGE prediction
+        _x_ model selection
+    
+Future versions:
+    _-_ Added 'find_breakpoints'
+        
 
 @author: Pieter Spealman 
 """
@@ -41,11 +54,15 @@ import pickle
 import pandas as pd
 import numpy as np
 import json
-import re   
+import re
+import time
 import scipy.stats as stats
 
 import warnings
 warnings.simplefilter("ignore")
+
+#01.08.2021 - loading modules 
+#exec(open('/usr/share/Modules/init/python.py').read())
 
 #function handles help commands
 def help_dialog():
@@ -80,7 +97,7 @@ def demo():
     'Step 4. Build Filter, including Ancestor breakpoints, using -filter\n\t'+ 
     'demo: python erisapfel.py -filter -gff demo/input/demo.gff -ancestor demo/output/demo_ancestor.bed -o demo/output/filter.p\n\n'+
     'Step 5. Identify Breakpoints in Adapted population, and applying filtering, using -breakpoint\n\t'+
-    'demo: python erisapfel.py -breakpoint -load_filter demo/output/filter.p -i demo/output/demo_evo -break_tab demo/output/demo_evolved.tab -break_bed demo/output/demo_evolved.bed\n\n'+
+    'demo: python erisapfel.py -breakpoint -filter_object demo/output/filter.p -i demo/output/demo_evo -break_tab demo/output/demo_evolved.tab -break_bed demo/output/demo_evolved.bed\n\n'+
     'Step 6. Derive the breakpoint contigs from split and / or discordant reads, using -localseq\n\t'+ 
     'demo: python erisapfel.py -localseq -break_tab demo/output/demo_evolved.tab -break_bed demo/output/demo_evolved.bed -fastq_1 demo/input/n01_evolved.fastq.gz -fastq_2 demo/input/n02_evolved.fastq.gz -o demo/input/localseq_evo \n\n'+
     'Step 7. Realign contigs back into reference genome to identify breakpoint origins\n\t'+
@@ -100,12 +117,12 @@ def demo():
     '')
     print(monolog)
 
+#chromo_list = ['NC_001135.5']
+#chromo_list = ['NC_001135.5', 'NC_001143.9']
+#chromo_list = ['NC_001133.9','NC_001134.8','NC_001141.2','NC_001135.5', 'NC_001143.9']
+#
 #chromo_list = ['NC_001133.9','NC_001134.8','NC_001135.5','NC_001136.10','NC_001137.3','NC_001138.5','NC_001139.9','NC_001140.6', 
 #'NC_001141.2','NC_001142.9','NC_001143.9','NC_001144.5','NC_001145.3','NC_001146.8','NC_001147.6','NC_001148.4']
-
-def output_handler(output):
-    if len(output.strip()) > 1:
-        print(output)
 
 def handle_outfile(p_output):
             
@@ -120,9 +137,58 @@ def handle_outfile(p_output):
         output_dir = ''
         output_file = args.output_file
         
-    return(output_dir, output_file)               
+    return(output_dir, output_file)  
+
+def io_initialize():
+    #Create default directories
+    def make_subdirectory(is_path,subdir):
+        new_dir = ('{}/{}').format(is_path, subdir)
+        if not os.path.exists(new_dir):
+            os.makedirs(new_dir)
     
+    #Define default directories
+    s_path = ('{}{}').format(output_dir, output_file)
+    bam_dir = ('{}/bam/').format(s_path)
+    final_output_dir = ('{}/output/').format(s_path)
+    temp_dir = ('{}/temp/').format(s_path)
+    pickles_dir = ('{}/pickles/').format(s_path)
+    
+    make_subdirectory(s_path,'bam')
+    make_subdirectory(s_path,'output')
+    make_subdirectory(s_path,'temp')
+    make_subdirectory(s_path,'pickles')
+    
+    return(s_path, bam_dir, final_output_dir, temp_dir, pickles_dir)
+
+def io_make(runmode='resource'):
+    if runmode == 'resource':
+        outline = ('Files and parameters used are stored in {}/resource.tab').format(final_output_dir)
+        print(outline)
+        
+        resource_file_name = ('{}/resource.tab').format(final_output_dir)
+        resource_file = open(resource_file_name, 'w')
+        
+        resource_file.close()
+        
+    if runmode == 'ml':
+        ml_file_name = ('{}/ml_hypo.tab').format(temp_dir)
+        ml_file = open(ml_file_name, 'w')
+
+        for cat, val in ml_hypo_dict.items():                
+            outline = ('{}\t{}\n').format(cat,val)
+            ml_file.write(outline)
+        ml_file.close()
+        
+        ml_file_name = ('{}/ml_loci.tab').format(temp_dir)
+        ml_file = open(ml_file_name, 'w')
+
+        for cat, val in ml_loci_dict.items():                
+            outline = ('{}\t{}\n').format(cat,val)
+            ml_file.write(outline)
+        ml_file.close()
+                     
 def test():
+    #TODO make accurate for latest version
     monolog = ('=== Currently Testing Erisapfel.py ===')
     print(monolog)
     
@@ -130,56 +196,57 @@ def test():
     print(monolog)    
     bashCommand = ('bwa index demo/input/demo.fna')
     print(bashCommand)       
-    output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+    subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
     
-
     monolog = ('\tTesting Step 1. -make command for ancestor\n')
     print(monolog)    
     bashCommand = ('python erisapfel.py -make -fa demo/input/demo.fna -gff demo/input/demo.gff -fastq_1 demo/input/n01_ancestor.fastq.gz -fastq_2 demo/input/n02_ancestor.fastq.gz -o demo/output/demo_anc')
     print(bashCommand)       
-    output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+    subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
     
     monolog = ('\tTesting Step 2. -make command for evolved\n')
     print(monolog)    
     bashCommand = ('python erisapfel.py -make -fa demo/input/demo.fna -gff demo/input/demo.gff -fastq_1 demo/input/n01_evolved.fastq.gz -fastq_2 demo/input/n02_evolved.fastq.gz -o demo/output/demo_evo')
     print(bashCommand)       
-    output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+    subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
     
     monolog = ('\tTesting Step 3. -breakpoint command for ancestor\n')
     print(monolog)    
     bashCommand = ('python erisapfel.py -breakpoint -i demo/output/demo_anc -break_tab demo/output/demo_ancestor.tab -break_bed demo/output/demo_ancestor.bed')
     print(bashCommand)       
-    output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+    subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
 
     monolog = ('\tTesting Step 4. -filter command using ancestor\n')
     print(monolog)    
     bashCommand = ('python erisapfel.py -filter -gff demo/input/demo_filter.gff -ancestor demo/output/demo_ancestor.bed -o demo/output/filter.p')
     print(bashCommand)       
-    output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+    subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
     
     monolog = ('\tTesting Step 5. -breakpoint command for evolved\n')
     print(monolog)    
-    bashCommand = ('python erisapfel.py -breakpoint -load_filter demo/output/filter.p -i demo/output/demo_evo -break_tab demo/output/demo_evolved.tab -break_bed demo/output/demo_evolved.bed')
+    bashCommand = ('python erisapfel.py -breakpoint -filter_object demo/output/filter.p -i demo/output/demo_evo -break_tab demo/output/demo_evolved.tab -break_bed demo/output/demo_evolved.bed')
     print(bashCommand)       
-    output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+    subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
     
     monolog = ('\tTesting Step 6. -localseq command\n')
     print(monolog)    
     bashCommand = ('python erisapfel.py -localseq -split_only -break_tab demo/output/demo_evolved.tab -break_bed demo/output/demo_evolved.bed -fastq_1 demo/input/n01_evolved.fastq.gz -fastq_2 demo/input/n02_evolved.fastq.gz -o demo/input/localseq_evo')
     print(bashCommand)       
-    output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+    subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
     
     monolog = ('\tTesting Step 7. -realign command\n')
     print(monolog)    
     bashCommand = ('python erisapfel.py -realign -fa demo/input/demo.fna -contigs demo/input/localseq_evo/ -o demo/input/localseq_evo/realign_evo')
     print(bashCommand)       
-    output_handler(subprocess.check_output([bashCommand],stderr= subprocess.STDOUT,shell=True))
+    (subprocess.run([bashCommand],stderr= subprocess.STDOUT,shell=True))
     
 parser = argparse.ArgumentParser()
 #handle help_dialog
 parser.add_argument('-man',"--manual", action='store_true')
 parser.add_argument('-demo',"--demo",action='store_true')
 parser.add_argument('-test',"--test",action='store_true')
+parser.add_argument('-view',"--view_resource")
+
 parser.add_argument('-run_name', '--run_name')
 
 parser.add_argument('-make',"--make", action='store_true')
@@ -188,9 +255,9 @@ parser.add_argument('-fa',"--fa_file")
 parser.add_argument('-bam', "--bam_file")
 
 parser.add_argument('-filter', '--make_filter', action='store_true')
+parser.add_argument('-filter_tab', '--filter_tab', nargs='+')
 parser.add_argument('-filter_gff','--filter_gff', nargs='+')
 parser.add_argument('-filter_bed', '--filter_bed', nargs='+')
-parser.add_argument('-filter_tab', '--filter_tab', nargs='+')
 
 parser.add_argument('-map', '--map_reads', action='store_true')
 parser.add_argument('-contig',"--contig", action='store_true')
@@ -199,7 +266,7 @@ parser.add_argument('-z_disco',"--disco_zscore")
 
 parser.add_argument('-qval', '--mapq_val')
 
-parser.add_argument('-load_filter', "--load_filter")
+parser.add_argument('-fo', "--filter_object")
 parser.add_argument('-flank','--filter_flanking')
 
 parser.add_argument('-break_tab', "--break_tab")
@@ -209,7 +276,6 @@ parser.add_argument('-split_only', '--split_only', action='store_true')
 parser.add_argument('-chromo_size', "--chromo_size")
 
 parser.add_argument('-localseq', '--build_sequence', action='store_true')
-parser.add_argument('-soft', "--soft_file")
 parser.add_argument('-hashsize', '--hashsize')
 parser.add_argument('-min_contig','--min_contig')
 parser.add_argument('-max_divergence','--max_divergence')
@@ -233,6 +299,7 @@ parser.add_argument('-contigs', "--contigs_file")
 parser.add_argument('-min_coverage', "--min_coverage")
 parser.add_argument('-max_eval', "--max_eval")
 parser.add_argument('-overlap_mask','--overlap_mask')
+parser.add_argument('-min_score','--min_score')
 
 parser.add_argument('-depth', '--depth_analysis', action='store_true')
 
@@ -244,7 +311,31 @@ parser.add_argument('-gap', '--max_gap')
 parser.add_argument('-purity', '--min_purity')
 parser.add_argument('-windowy', '--window')
 
-parser.add_argument('-breaks','--breakpoints', action='store_true')
+parser.add_argument('-breakpoints','--find_breakpoints', action='store_true')
+
+parser.add_argument('-strand', '--separate_by_strand')
+
+#get feature values
+parser.add_argument('-mge', "--mge_file")
+parser.add_argument('-kmge', "--known_mge")
+
+#model functions
+#python erisapfel.py -ml_select -i temp/mge_value_df.tab --metaparameters fast
+parser.add_argument('-ml_select', '--model_selection', action='store_true')
+parser.add_argument('-ml_meta', '--metaparameters')
+
+#python erisapfel.py -ml_train -i temp/mge_value_df.tab --preprocessor MinMaxScaler --sampler AllKNN --classifier LogisticRegression_lbgfs --model_object DGY_model.p
+parser.add_argument('-ml_train', '--model_train', action='store_true')
+parser.add_argument('-ml_p', '--preprocessor')
+parser.add_argument('-ml_s', '--sampler')
+parser.add_argument('-ml_c', '--classifier')
+
+#python erisapfel.py -ml_predict -i temp/mge_value_df.tab --model_object DGY_model.p -o 
+parser.add_argument('-ml_predict', '--model_predict', action='store_true')
+parser.add_argument('-model', '--model_object')
+parser.add_argument('-all', '--return_all', action='store_true')
+
+
 
 args = parser.parse_args()
 
@@ -256,7 +347,16 @@ if args.demo:
     
 if args.test:
     test()
-
+    
+if args.view_resource:
+    resource_dict = pickle.load(open(args.view_resource, 'rb'))
+    
+    for key, value in resource_dict.items():
+        print('key: ', key)
+        print('value: ', value)
+        
+        
+''' '''        
 filter_region_dict = {}
 region_name_dict = {}
 hypothesis_score_dict = {}
@@ -271,8 +371,8 @@ processed_reads = 0
 used_reads = 0
 filtered_reads = 0
 
-if args.load_filter:
-    region_filter_dict = pickle.load(open(args.load_filter, 'rb'))
+if args.filter_object and not args.make_filter:
+    region_filter_dict = pickle.load(open(args.filter_object, 'rb'))
 
 if args.filter_flanking:
     flank_nt = int(args.filter_flanking)
@@ -286,15 +386,9 @@ if args.output_file:
 if args.run_name:
     make_name = ("results/{}").format(args.run_name)
     output_dir, output_file = handle_outfile(make_name)
-    
-#Define default directories
-s_path = ('{}{}').format(output_dir, output_file)
-bam_dir = ('{}/bam/').format(s_path)
-idx_dir = ('{}/idx/').format(s_path)
-# TODO rename cluster 'temp'
-temp_dir = ('{}/cluster/').format(s_path)
-pickles_dir = ('{}/pickles/').format(s_path)
-    
+    #TODO - does this break everything?    
+    s_path, bam_dir, final_output_dir, temp_dir, pickles_dir = io_initialize()
+
 # Define scores and weights
 if args.split_score:
     min_score = int(args.split_score)
@@ -333,6 +427,22 @@ else:
 
 compliment_dict = {'A':'T', 'T':'A', 'G':'C', 'C':'G'}
 
+if args.mge_file:
+    run_mge = True
+else:
+    run_mge = False
+    
+if args.mapq_val:
+    mapq_val = int(args.mapq_val)
+else:
+    mapq_val = 1
+    
+#set minimum reporting score for _realign.gff output 
+if args.min_score:
+    c_min_score = int(args.min_score)
+else:
+    c_min_score = 600
+
 def pickle_loader(file_name, runmode):
     if runmode == 'dict':
         file = open(file_name,'rb')
@@ -343,35 +453,11 @@ def pickle_loader(file_name, runmode):
         object_file = pd.read_pickle(file_name)
     return(object_file)
 
-def io_make(runmode='resource'):
-    if runmode == 'resource':
-        resource_file_name = ('{}/resource.tab').format(idx_dir)
-        resource_file = open(resource_file_name, 'w')
-        
-        resource_file.close()
-        
-    if runmode == 'ml':
-        ml_file_name = ('{}/ml_hypo.tab').format(idx_dir)
-        ml_file = open(ml_file_name, 'w')
-
-        for cat, val in ml_hypo_dict.items():                
-            outline = ('{}\t{}\n').format(cat,val)
-            ml_file.write(outline)
-        ml_file.close()
-        
-        ml_file_name = ('{}/ml_loci.tab').format(idx_dir)
-        ml_file = open(ml_file_name, 'w')
-
-        for cat, val in ml_loci_dict.items():                
-            outline = ('{}\t{}\n').format(cat,val)
-            ml_file.write(outline)
-        ml_file.close()
-        
 def io_append(resource_dict, runmode='resource'):
     if runmode == 'resource':
         pre_existing_dict = {}
         
-        resource_file_name = ('{}/resource.tab').format(idx_dir)    
+        resource_file_name = ('{}/resource.tab').format(final_output_dir)    
         resource_file = open(resource_file_name)
         
         for line in resource_file:
@@ -379,7 +465,7 @@ def io_append(resource_dict, runmode='resource'):
             pre_existing_dict[cat]=val
         resource_file.close()
     
-        resource_file_name = ('{}/resource.tab').format(idx_dir)    
+        resource_file_name = ('{}/resource.tab').format(final_output_dir)    
         resource_file = open(resource_file_name, 'a')
         
         for cat, val in resource_dict.items():
@@ -389,42 +475,40 @@ def io_append(resource_dict, runmode='resource'):
                 
         resource_file.close()
         
-        resource_pickle_name = ('{}/resource.p').format(idx_dir)         
+        resource_pickle_name = ('{}/resource.p').format(final_output_dir)         
         with open(resource_pickle_name, 'wb') as file:
             pickle.dump(resource_dict, file)
 
     if runmode == 'ml_hypo':
-        ml_pickle_name = ('{}/ml_hypo.p').format(idx_dir)         
+        ml_pickle_name = ('{}/ml_hypo.p').format(temp_dir)         
         with open(ml_pickle_name, 'wb') as file:
             pickle.dump(ml_hypo_dict, file)
             
-        ml_pickle_name = ('{}/ml_loci.p').format(idx_dir)         
+        ml_pickle_name = ('{}/ml_loci.p').format(temp_dir)         
         with open(ml_pickle_name, 'wb') as file:
             pickle.dump(ml_loci_dict, file)
         
 def io_load(runmode='resource'):
     if runmode == 'resource':
-        resource_file_name = ('{}/resource.p').format(idx_dir)
+        resource_file_name = ('{}/resource.p').format(final_output_dir)
         
         with open(resource_file_name, 'rb') as resource_file:
             resource_dict = pickle.load(resource_file)
             
         return(resource_dict) 
         
-    # TODO change idx to pickle
     if runmode == 'ml':
-        ml_pickle_name = ('{}/ml_hypo.p').format(idx_dir) 
+        ml_pickle_name = ('{}/ml_hypo.p').format(temp_dir) 
         with open(ml_pickle_name, 'rb') as ml_file:
             ml_hypo_dict = pickle.load(ml_file)
 
-        ml_pickle_name = ('{}/ml_loci.p').format(idx_dir) 
+        ml_pickle_name = ('{}/ml_loci.p').format(temp_dir) 
         with open(ml_pickle_name, 'rb') as ml_file:
             ml_loci_dict = pickle.load(ml_file)
             
         return(ml_hypo_dict, ml_loci_dict) 
         
     if runmode == 'fq':
-                   
         pickle_in = ("{}/uniuid_to_seq_dict.p").format(pickles_dir)
         with open(pickle_in, 'rb') as fq_file:
             uniuid_to_seq_dict = pickle.load(fq_file)
@@ -448,6 +532,24 @@ def reverse_compliment(seq):
         rc_seq += c_nt
         
     return(rc_seq)
+
+def convert_sort(outfile_name):
+    bash_command = ('samtools view -Sb {output_file}.sam > {output_file}_u.bam').format(output_file=outfile_name)
+    subprocess.run([bash_command],stderr=subprocess.STDOUT,shell=True)
+
+    bash_command = ('samtools sort -T tmp_sort -o {output_file}.bam {output_file}_u.bam').format(output_file=outfile_name)
+    subprocess.run([bash_command],stderr=subprocess.STDOUT,shell=True)
+        
+    bash_command = ('samtools index {output_file}.bam').format(output_file=outfile_name)
+    subprocess.run([bash_command],stderr=subprocess.STDOUT,shell=True)
+        
+    bash_command = ('rm {output_file}.sam {output_file}_u.bam').format(output_file=outfile_name)
+    subprocess.run([bash_command],stderr=subprocess.STDOUT,shell=True)
+
+    #bash_command = ('bedtools genomecov -ibam {output_file}.bam -d > {output_file}.depth').format(output_file=outfile_name)
+    #subprocess.run([bash_command],stderr=subprocess.STDOUT,shell=True)
+        
+    return()
 
 def parse_cigar(cigar, run_mode):
     """This function calculates the offset for the read based on the match
@@ -516,14 +618,22 @@ def make_fasta(temp_split_seq_file_name, hypo, qname_list):
     temp_split_seq_file = open(temp_split_seq_file_name, 'w')
         
     for qname in qname_list:
-        qname = qname.split('_')[1]
-        #print('pf_q', qname)
+        if qname.count('_') == 1:
+            qname = qname.split('_')[1]
+        else:
+            #split_NB501157:106:HKFYTBGX2:4:11504:6476:10198_2.2
+            preid, midid, postid = qname.split('_')
+            postid = postid.split('.')[1]
+            qname = ('{}.{}').format(midid, postid)
+            
         if qname in uniuid_to_seq_dict:
             seq = uniuid_to_seq_dict[qname]
             outline = ('>{}\n{}\n').format(qname,seq)
             temp_split_seq_file.write(outline) 
-            #print(outline)
-        else:
+            
+        else:    
+            print(uniuid_to_seq_dict.keys())
+            print(qname)
             1/0
             
     temp_split_seq_file.close()
@@ -535,21 +645,21 @@ def degzip(full_name, file_name, pre_dir=''):
     if (full_name == file_name + '.gz') or (full_name == file_name) or (full_name == pre_dir+file_name):
         if '.gz' not in file_name:
             bashCommand = ('gunzip -c {} > {}').format(full_name, file_name)
-            output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+            subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
             print(bashCommand)
             
         if '.gz' in file_name:
             bashCommand = ('gunzip -c {} > {}').format(full_name, file_name.split('.gz')[0])
-            output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+            subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
             print(bashCommand)
         
     else:
         bashCommand = ('cp {} {}.gz').format(full_name, file_name)
-        output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+        subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
         print(bashCommand)
         
         bashCommand = ('gunzip -f {}').format(file_name)
-        output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+        subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
         print(bashCommand)
         
 def parse_fastq(fastq_full_name, series_number, qname_lookup, uniuid_to_seq_dict, uniuid_to_phred_dict):
@@ -566,7 +676,7 @@ def parse_fastq(fastq_full_name, series_number, qname_lookup, uniuid_to_seq_dict
             fastq_file_name = fastq_file_name[:-3]
         else:
             bashCommand = ('cp -f {} {}').format(fastq_full_name, fastq_file_name)
-            output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
+            subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
 
     else:
         if fastq_full_name[-3:]=='.gz':
@@ -631,15 +741,12 @@ def build_fastq(infile_name, uniuid_to_seq_dict, uniuid_to_phred_dict):
             else:
                 if uid in uniuid_to_seq_dict:
                     seq = uniuid_to_seq_dict[uid]
-                    #print('seq', seq)
                 
                 if uid in uniuid_to_phred_dict:
                     phred = uniuid_to_phred_dict[uid]
-                    #print('phred', phred)
                 
                 outline = ('@{}\n{}\n+\n{}\n').format(uid, seq, phred)
                 outfile.write(outline)
-                #print(outline)
             
     infile.close()
     outfile.close()
@@ -661,7 +768,7 @@ def prep_qname(qname, hypo, outline):
     if hypo not in locus_lookup_dict:
         locus_lookup_dict[hypo] = outline
 
-def parse_brks(break_file_name, each_type):
+def parse_brks(break_file_name):
     print('\tParsing breakpoints')
     brks = open(break_file_name)
     
@@ -684,93 +791,1363 @@ def parse_brks(break_file_name, each_type):
                 prep_qname(qname, hypo, outline)    
                 
     brks.close()
-    
-def unpackbits(x,runmode='upb'):
-    #TODO replace the unpack bits functions
-    #    
-    #0  1    0x1   (rp)    read_paired
-    #1  2    0x2   (rmp)   read_mapped_in_proper_pair
-    #2  4    0x4   (ru)    read_unmapped
-    #3  8    0x8   (mu)    mate_unmapped
-    #4  16   0x10  (rrs)   read_reverse_strand
-    #5  32   0x20  (mrs)   mate_reverse_strand
-    #6  64   0x40  (fip)   first_in_pair
-    #7  128  0x80  (sip)   second_in_pair
-    #8  256  0x100 (npa)   not_primary_alignment
-    #9  512  0x200 (rfp)   read_fails_platform
-    #10 1024 0x400 (pcr)   read_is_PCR_or_optical_duplicate
-    #11 2058 0x800 (sa)    supplementary_alignment
-     
-    upb = []
-    
-    for exp in range(11,-1,-1):
-        bit = 2**exp
         
-        if (x - bit) >= 0:
-            upb.append(1)
-            x-=(bit)
-        else:
-            upb.append(0)
+def unpackbits(x,num_bits=12):
+    xshape = list(x.shape)
+    x = x.reshape([-1,1])
+    to_and = 2**np.arange(num_bits).reshape([1,num_bits])
+    upb = (x & to_and).astype(bool).astype(int).reshape(xshape + [num_bits])
 
-    if runmode == 'upb':
-        return(upb[:8])
+    #0  (rp)    read_paired
+    #1  (rmp)    read_mapped_in_proper_pair
+    #2  (ru)    read_unmapped
+    #3  (mu)    mate_unmapped
+    #4  (rrs)    read_reverse_strand
+    #5  (mrs)    mate_reverse_strand
+    #6  (fip)    first_in_pair
+    #7  (sip)    second_in_pair
+    #8  (npa)    not_primary_alignment
+    #9  (rfp)    read_fails_platform
+    #10 (pcr)    read_is_PCR_or_optical_duplicate
+    #11 (sa)    supplementary_alignment
     
-    # psb -> pseudo-samblaster
-    if runmode == 'psb':
-        """ DISCORDANT definition (from samblaster)
-            Both side of the read pair are mapped (neither FLAG 0x4 or 0x8 is set).
-            The properly paired FLAG (0x2) is not set.
-            Note: We implemented an additional criteria to distinguish between strand re-orientations and distance issues
-            Strand Discordant reads must be both on the same strand.
-        """
-            
-        """ SPLIT READS
-            Identify reads that have between two and --maxSplitCount [2] primary and supplemental alignments.
-            Sort these alignments by their strand-normalized position along the read.
-            Two alignments are output as splitters if they are adjacent on the read, and meet these criteria:
-                each covers at least --minNonOverlap [20] base pairs of the read that the other does not.
-                the two alignments map to different reference sequences and/or strands. 
-                the two alignments map to the same sequence and strand, and represent a SV that is at least --minIndelSize [50] in length, 
-                and have at most --maxUnmappedBases [50] of un-aligned base pairs between them.
-            Split read alignments that are part of a duplicate read will be output unless the -e option is used.
-        """
-    
-        psb = upb[::-1]
-        return(psb)
-        # if (psb[1] == 0) and (psb[2] == 0) and (psb[3] == 0):
-        #     return('evaluate')
+    """ DISCORDANT definition (from samblaster)
+        Both side of the read pair are mapped (neither FLAG 0x4 or 0x8 is set).
+        The properly paired FLAG (0x2) is not set.
+        Note: We implemented an additional criteria to distinguish between strand re-orientations and distance issues
+        Strand Discordant reads must be both on the same strand.
+    """
         
-        # if 
-              
+    """ SPLIT READS
+        Identify reads that have between two and --maxSplitCount [2] primary and supplemental alignments.
+        Sort these alignments by their strand-normalized position along the read.
+        Two alignments are output as splitters if they are adjacent on the read, and meet these criteria:
+            each covers at least --minNonOverlap [20] base pairs of the read that the other does not.
+            the two alignments map to different reference sequences and/or strands. 
+            the two alignments map to the same sequence and strand, and represent a SV that is at least --minIndelSize [50] in length, 
+            and have at most --maxUnmappedBases [50] of un-aligned base pairs between them.
+        Split read alignments that are part of a duplicate read will be output unless the -e option is used.
+    """
+    return(upb) 
+    
+def run_bedgraph(bam_file, each_sample):
+    print('\tRunning bedtools genomecov on '+ str(infile_name) + '...')
+
+    bashCommand = ('bedtools genomecov -bg -ibam {} > {}{}.bedgraph').format(bam_file, final_output_dir, each_sample)
+    print(bashCommand)
+    subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
+
+def run_mpileup(infile_name, each_sample, runmode):
+    print('\tRunning mpileup genomecov on '+ str(infile_name) + '...')
+     
+    if runmode == 'RD':
+        print('\tRunning samtools to determine sample depth...')
+        if filter_by_bed:
+            bashCommand = ('samtools mpileup -B -f {} {} -l {} -a -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)        
+        else:
+            bashCommand = ('samtools mpileup -B -f {} {} -a -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)                        
+        print(bashCommand)
+        subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
+
+    if runmode == 'discordant':
+        print('\tRunning samtools to determine discordant read depth...')
+        if filter_by_bed:
+            bashCommand = ('samtools mpileup -B -f {} {} -l {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)            
+        else:
+            bashCommand = ('samtools mpileup -B -f {} {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)
+        print(bashCommand)
+        subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
+        
+    if runmode == 'split':
+        print('\tRunning samtools to determine split read depth...')
+        if filter_by_bed:
+            bashCommand = ('samtools mpileup -B -f {} {} -l {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)     
+        else:
+            bashCommand = ('samtools mpileup -B -f {} {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)     
+        print(bashCommand)            
+        subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
+        
+
+def populate_filter_dict(chromo, start, stop, region):    
+    if chromo not in filter_region_dict:
+        filter_region_dict[chromo]=set()
+
+    if chromo in filter_region_dict:
+        for index in range(start,stop+1):
+            filter_region_dict[chromo].add(index)  
+
+    if region in region_name_dict:
+        region_name_dict[region]+=1
+        
+    if region not in region_name_dict:
+        region_name_dict[region]=1 
+
+def parse_filter_gff(gff_file):
+    parse_filter_object = open(gff_file)
+    for line in parse_filter_object:
+        if line[0]!='#':
+            region = 'unannotated'
+            if 'ID=' in line:
+                region = line.split('ID=')[1].split(';')[0].strip()
+            else:
+                if line.count('\t') > 7:
+                    region = line.split('\t')[8].split(';')[0].strip()
+                
+            chromo = line.split('\t')[0]
+            start = int(line.split('\t')[3])
+            stop = int(line.split('\t')[4])
+            populate_filter_dict(chromo, start, stop, region)
+            
+    parse_filter_object.close()
+    
+def parse_tab(tab_file, anc_QC_list):
+    anc_tab = open(tab_file)
+    
+    for line in anc_tab:
+        d_ct = 0
+        s_ct = 0
+        chromo = line.split('\t')[1]
+        start = int(line.split('\t')[2])
+        stop = int(line.split('\t')[3])
+        breakpoint_name = line.split('\t')[0]
+        
+        uid_str = line.split('\t')[8].split(',')
+        s_ct = uid_str.count('split_')
+        d_ct = uid_str.count('discordant_')
+
+        score = (sw*s_ct) + (dw*d_ct)
+        
+        if (s_ct >= 1) and (score >= min_score):
+            anc_QC_list.append(breakpoint_name)
+            populate_filter_dict(chromo, start, stop, breakpoint_name)
+        
+        if (s_ct == 0) and (score >= 3*min_score):
+            anc_QC_list.append(breakpoint_name)
+            populate_filter_dict(chromo, start, stop, breakpoint_name)
+            
+    anc_tab.close()
+    
+    return(anc_QC_list)
+            
+def parse_bed(bed_file, source):
+    in_bed = open(bed_file)
+    
+    for line in in_bed:
+        chromo = line.split('\t')[0]
+        start = int(line.split('\t')[1])
+        stop = int(line.split('\t')[2])
+        breakpoint_name = line.split('\t')[3] + '_' + source
+        
+        #if breakpoint_name not in anc_QC_list:
+        populate_filter_dict(chromo, start, stop, breakpoint_name)
+    
+    in_bed.close()
+
+def check_coverage(source, prefilter_object_name, contig_seq_dict):      
+    process = False
+
+    temp_filter_object = open(prefilter_object_name)
+    
+    for line in temp_filter_object:
+        if line[0] == '>' and not process:
+            eval_cov = float(line.rsplit('_',1)[1])
+            if eval_cov >= float(min_coverage):
+                    process=True
+                    seq_str=''
+                    node_name = source+'_'+str(int(eval_cov))
+                    
+        if line[0]!= '>' and process:
+            seq_str += line.strip()
+            
+    temp_filter_object.close()
+
+    if len(seq_str)>1:
+        contig_seq_dict[node_name]=seq_str
+            
+    return(contig_seq_dict)    
+
+def long_walk(nt, long_range, ct_dict):
+    miss_ct = 0
+    depth = []
+    
+    gap = 10
+
+    for s_step in long_range:
+        if s_step in ct_dict:
+            depth.append(float(ct_dict[s_step]))
+            nt=s_step
+            miss_ct = 0
+            
+        else:
+            miss_ct += 1
+
+        if miss_ct >= 3*gap:
+            return(nt,depth)
+            
+    return(nt,depth)
+
+def local_walk(short_range, ct_dict):
+    hit_ct = 0
+
+    for s_step in short_range:
+        if s_step in ct_dict:
+            hit_ct += 1
+            
+        if hit_ct >= (purity*min_length):
+            return(True)
+    else:
+        return(False)
+    
+def build_mge_lookup_list(chromo):
+    global mge_nt_lookup_dict
+    
+    mge_nt_list = []
+    
+    sub_mge_lookup = mge_nt_lookup_dict[chromo]
+    
+    for nt in sub_mge_lookup:
+        mge_nt_list.append(nt)
+
+    return(mge_nt_list)  
+
+def build_mge_region_lookup_list(chromo):
+    global mge_nt_lookup_dict
+    
+    mge_nt_list = []
+    
+    sub_mge_lookup = mge_nt_lookup_dict[chromo]
+    
+    for nt in sub_mge_lookup:
+        mge_nt_list.append(nt)
+
+    return(mge_nt_list)
+    
+def build_mge_trace(subz_df, suby_df, each_type, c_median, g_median, mge_g_std, chromo, mge_gff):
+    global mge_nt_lookup_dict
+    
+    sub_mge_lookup = mge_nt_lookup_dict[chromo]
+    
+    subz_dict = subz_df.to_dict(orient='index')
+    subz_ct_dict = {}
+    for index, deets in subz_dict.items(): 
+        subz_ct_dict[int(deets['nuc'])]=float(deets['ct'])
+        
+    suby_dict = suby_df.to_dict(orient='index')
+    suby_ct_dict = {}
+    for index, deets in suby_dict.items():
+        suby_ct_dict[int(deets['nuc'])]=float(deets['ct'])
+    
+    seed_set = set()
+    
+    if len(subz_ct_dict) > 1:
+        min_nuc = min(subz_ct_dict)
+        max_nuc = max(subz_ct_dict)                            
+
+        for nuc, ct in subz_ct_dict.items():   
+            if nuc in sub_mge_lookup:
+                if (nuc not in seed_set):
+                    short_range = range(nuc-int(min_length/2),nuc+int(min_length/2))
+                    if (local_walk(short_range, subz_ct_dict)) or (each_type != 'RD'):                        
+                        left_long_range = range(min_nuc-int(min_length/2), nuc)[::-1]
+                        right_long_range = range(nuc, max_nuc+int(min_length/2))
+                        
+                        start, depth = long_walk(nuc, left_long_range, suby_ct_dict)          
+                        stop, depth_2 = long_walk(nuc, right_long_range, suby_ct_dict)
+            
+                        depth += depth_2
+                        
+                        depth_median = np.mean(depth)
+                        depth_std = np.std(depth)
+    
+                        for nt in range(start, stop+1):
+                            seed_set.add(nt)
+                                                        
+                        if (start >= 0) and (stop >= 0) and (depth_median >= (g_median + mge_g_std)):
+                            rel_c = depth_median/float(c_median)
+                            rel_g = depth_median/float(g_median)
+                                                        
+                            outline = ('{chromo}\t{each_type}_depth\tTea_CNV'
+                                       '\t{start}\t{stop}\t{sum_d}\t.\t.'
+                                       '\tID={chromo}:{start}-{stop};rel_chromosome_RD={rel_c};rel_genome_RD={rel_g};sample={sample}\n'
+                                       ).format(
+                                           chromo = every_chromo, 
+                                           each_type = each_type, 
+                                           start = start, stop=stop, 
+                                           sum_d = np.mean(depth),
+                                           rel_c = round(rel_c,2), 
+                                           rel_g = round(rel_g,2), 
+                                           sample = each_sample)
+                            
+                            mge_gff.write(outline)
+                                                        
+                            locus = ('{}:{}-{}').format(every_chromo, start, stop)
+                            
+                            depth_dict[locus] = [rel_c, rel_g, depth_std]
+        
+def build_trace(subz_df, suby_df, each_type, c_median, g_median):
+    
+    subz_dict = subz_df.to_dict(orient='index')
+    subz_ct_dict = {}
+    for index, deets in subz_dict.items(): 
+        subz_ct_dict[int(deets['nuc'])]=float(deets['ct'])
+        
+    suby_dict = suby_df.to_dict(orient='index')
+    suby_ct_dict = {}
+    for index, deets in suby_dict.items():
+        suby_ct_dict[int(deets['nuc'])]=float(deets['ct'])
+    
+    seed_set = set()
+    
+    if len(subz_ct_dict) > 1:
+        min_nuc = min(subz_ct_dict)
+        max_nuc = max(subz_ct_dict)                            
+
+        for nuc, ct in subz_ct_dict.items():   
+            
+            if (nuc not in seed_set):
+                short_range = range(nuc-int(min_length/2),nuc+int(min_length/2))
+                
+                if (local_walk(short_range, subz_ct_dict)) or (each_type != 'RD'):                    
+                    left_long_range = range(min_nuc-int(min_length/2), nuc)[::-1]
+                    right_long_range = range(nuc, max_nuc+int(min_length/2))
+                    
+                    start, depth = long_walk(nuc, left_long_range, suby_ct_dict)          
+                    stop, depth_2 = long_walk(nuc, right_long_range, suby_ct_dict)
+        
+                    depth += depth_2
+                    
+                    depth_median = np.mean(depth)
+                    depth_std = np.std(depth)
+
+                    for nt in range(start, stop+1):
+                        seed_set.add(nt)
+                                                
+                    if (start >= 0) and (stop >= 0):
+                        rel_c = depth_median/float(c_median)
+                        rel_g = depth_median/float(g_median)
+                        
+                        outline = ('{chromo}\t{each_type}_depth\tCNV'
+                                   '\t{start}\t{stop}\t{sum_d}\t.\t.'
+                                   '\tID={chromo}:{start}-{stop};rel_chromosome_RD={rel_c};rel_genome_RD={rel_g};sample={sample}\n'
+                                   ).format(
+                                       chromo = every_chromo, 
+                                       each_type = each_type, 
+                                       start = start, stop=stop, 
+                                       sum_d = np.mean(depth),
+                                       rel_c = round(rel_c,2), 
+                                       rel_g = round(rel_g,2), 
+                                       sample = each_sample)
+                        
+                        depth_gff_outfile.write(outline)
+                        
+                        locus = ('{}:{}-{}').format(every_chromo, start, stop)
+                        
+                        depth_dict[locus] = [rel_c, rel_g, depth_std]
+                            
+def get_seq(seq_file_name):
+    seq_file = open(seq_file_name)
+    seq_set = set()
+    
+    for line in seq_file:    
+        if line[0] == '>':
+            seq_set.add(line.split('>')[1].strip())
+            seq = ''
+        
+        else:
+            seq+=line.strip()
+    
+    if len(seq_set) > 1:
+        print('seq_file error: too many sequences')
+        1/0
+    
+    return(seq)
+
+
+def return_most_unique_read(read_nt_dict):
+    reverse_read_nt_dict = {}
+    for nt in read_nt_dict:
+        numb_set = read_nt_dict[nt]
+        
+        for numb in numb_set:
+            if numb not in reverse_read_nt_dict:
+                reverse_read_nt_dict[numb] = []
+            reverse_read_nt_dict[numb].append(len(numb_set))
+    
+    max_read_unique = False
+    for numb in reverse_read_nt_dict:
+        max_unique = 0
+        unique_map = 0
+        
+        for nt in reverse_read_nt_dict[numb]:
+            if nt == 1:
+                unique_map += 1
+        
+        if (unique_map >= 15) and (unique_map > max_unique):
+            max_unique = unique_map
+            max_read_unique = numb
+        
+    return(max_read_unique)
+
+def build_otherside_dict(query_deets_dict, split_assignment, anchor, otherside_type, otherside_dict):
+    for next_anchor in split_assignment[otherside_type]:
+        if next_anchor != anchor:
+            chromo = query_deets_dict[next_anchor]['chromo']
+            next_bit_score = query_deets_dict[next_anchor]['bit_score']
+            next_hf = min(query_deets_dict[next_anchor]['hit_from'], query_deets_dict[next_anchor]['hit_to'])
+            next_ht = max(query_deets_dict[next_anchor]['hit_from'], query_deets_dict[next_anchor]['hit_to'])
+
+            if chromo not in otherside_dict:
+                otherside_dict[chromo] = {}
+
+            for next_nt in range(next_hf, next_ht+1):
+                if next_nt not in otherside_dict[chromo]:
+                    otherside_dict[chromo][next_nt] = 0
+                    
+                otherside_dict[chromo][next_nt]+=next_bit_score
+                
+    return(otherside_dict)
+
+def parse_json(json_file_name, seq, hypothesis_dict, anchor_contig_dict):
+    '''
+    
+
+    Parameters
+    ----------
+    json_file_name : str
+        json_file_name points to the json file output from the blastn results
+    contig_seq_dict : dict
+        DESCRIPTION.
+    gff_list_dict : TYPE
+        DESCRIPTION.
+    gff_rank_dict : TYPE
+        DESCRIPTION.
+    blast_read_aligned_sections_dict : TYPE
+        DESCRIPTION.
+    blast_genome_aligned_regions_dict : TYPE
+        DESCRIPTION.
+    gff_uid_dict : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    None.
+
+    '''
+    
+    active = False
+    query_deets_dict = {}
+    try:
+        data = json.load(open(json_file_name))
+    except:
+        print('json file ' + json_file_name + ' not found')
+    
+    for report_index in range(len(data["BlastOutput2"])):
+        data_dict = (data["BlastOutput2"][report_index])
+        for each_report in data_dict.items():
+            for a_key, a_value in enumerate(each_report):
+                if type(a_value)==dict:                   
+                    for b_key, b_value in a_value.items():
+                        if type(b_value)==dict:
+                            for c_key, c_value in b_value.items():
+                                if ('bl2seq' in c_key) and (type(c_value)==list):
+                                    hit_dict = c_value[0]
+                                    
+                                    for d_key, d_value in hit_dict.items():                                        
+                                        q_title = str(hit_dict['query_title'])
+                                          
+                                        if ('hits' in d_key) and (type(d_value)==list) and (len(d_value)>0):
+                                            for each_hits in d_value:
+                                                
+                                                for e_key, e_value in each_hits.items():
+                                                
+                                                    base = q_title + '.'+str(each_hits['num']) 
+                                                    chromo = each_hits['description']
+                                                    chromo = chromo[0]
+                                                    #chromo_dict[base] = str(chromo['id'])
+                                                        
+                                                    if (e_key == 'hsps') and (type(e_value)==list):
+                                                        for e_index in range(len(e_value)):
+                                                            each_hsps = e_value[e_index]
+    
+                                                            numb = str(base)+'.'+str(each_hsps['num'])
+                                                            
+                                                            if len(numb)>1:
+                                                                active = True
+                                                                hit_from = int(each_hsps["hit_from"])                                                                
+                                                                hit_to = int(each_hsps["hit_to"])                                                                
+                                                                query_from = int(each_hsps["query_from"])                                                                
+                                                                query_to = int(each_hsps["query_to"])                                                            
+                                                                bit_score = float(each_hsps["bit_score"])
+                                                                evalue_score = float(each_hsps["evalue"])
+                                                                query_strand = str(each_hsps["query_strand"])                                                                
+                                                                hit_strand = str(each_hsps["hit_strand"])                                                                
+                                                                qseq = str(each_hsps["qseq"])                                                            
+                                                                hseq = str(each_hsps["hseq"])
+                                                            
+                                                            if evalue_score > max_eval:
+                                                                active = False
+                                                            
+                                                            if active:
+                                                                active = False
+                                                                query_deets_dict[numb] = {
+                                                                    'q_id':base,
+                                                                    'chromo':chromo['id'],
+                                                                    'hit_from':hit_from,
+                                                                    'hit_to':hit_to,
+                                                                    'query_from':query_from,
+                                                                    'query_to':query_to,
+                                                                    'bit_score':bit_score,
+                                                                    'query_strand':query_strand,
+                                                                    'hit_strand':hit_strand,
+                                                                    'qseq':qseq, 
+                                                                    'hseq':hseq,
+                                                                    'q_title':q_title,
+                                                                    'contig':seq}
+                                                                
+                                                                numb = 0
+
+    '''
+    for each nt of the read (query), determine if it is part of the anchor or not
+    '''
+    read_nt_dict = {}
+    
+    
+    for numb in query_deets_dict:
+        qf = query_deets_dict[numb]['query_from']
+        qt = query_deets_dict[numb]['query_to']
+        
+        for nt in range(qf, qt+1):
+            if nt not in read_nt_dict:
+                read_nt_dict[nt] = set()
+                
+            read_nt_dict[nt].add(numb)
+
+    split_assignment = {}
+    
+    for numb in query_deets_dict:
+        unique_map = 0
+        multi_map = 0
+        qf = query_deets_dict[numb]['query_from']
+        qt = query_deets_dict[numb]['query_to']
+        
+        for nt in range(qf, qt+1):
+            if len(read_nt_dict[nt]) > 1:
+                multi_map += 1
+            else:
+                unique_map += 1
+                
+        if (unique_map/(unique_map+multi_map)) > 0.8:
+            if 'anchor' not in split_assignment:
+                split_assignment['anchor'] = set()
+                
+            split_assignment['anchor'].add(numb)
+            
+        else:
+            if 'multimap' not in split_assignment:
+                split_assignment['multimap'] = set()
+                
+            split_assignment['multimap'].add(numb)
+            
+    
+    if 'anchor' not in split_assignment:
+        most_unique_read = return_most_unique_read(read_nt_dict)
+        
+        if most_unique_read:
+            split_assignment['anchor'] = set()
+            split_assignment['anchor'].add(most_unique_read)
+
+    if 'anchor' in split_assignment:        
+        #anchors first
+        for anchor in split_assignment['anchor']:
+            
+            #build anchor side:
+            chromo = query_deets_dict[anchor]['chromo']
+            hf = min(query_deets_dict[anchor]['hit_from'], query_deets_dict[anchor]['hit_to'])
+            ht = max(query_deets_dict[anchor]['hit_from'], query_deets_dict[anchor]['hit_to'])
+            
+            if chromo not in hypothesis_dict:
+                hypothesis_dict[chromo] = {}
+                
+            
+            
+            #build otherside
+            for nt in range(hf, ht+1):
+                if nt not in hypothesis_dict[chromo]:
+                    otherside_dict = {}
+                else:
+                    otherside_dict = hypothesis_dict[chromo][nt]
+                    
+                for otherside_type in split_assignment:
+                    #print(otherside_type)
+                    otherside_dict = build_otherside_dict(query_deets_dict, split_assignment, anchor, otherside_type, otherside_dict)
+                    
+                hypothesis_dict[chromo][nt] = otherside_dict
+                    
+            if chromo not in anchor_contig_dict:
+                anchor_contig_dict[chromo] = {}
+                
+                for nt in range(hf, ht+1):
+                    if nt not in anchor_contig_dict[chromo]:
+                        anchor_contig_dict[chromo][nt] = set()
+                        
+                    anchor_contig_dict[chromo][nt].add(seq)
+            
+    return(hypothesis_dict, anchor_contig_dict)
+
+def make_anchor_regions(nt_list, gap):
+    nt_list.sort()
+
+    region_dict = {}
+
+    new_region = True
+    
+    for nt in nt_list:
+        if new_region:
+            region_number = len(region_dict)
+            region_dict[len(region_dict)] = {'start':nt, 'stop':0}
+            new_region = False
+        
+        if nt + gap not in nt_list:
+            region_dict[region_number]['stop'] = nt
+            new_region = True
+    
+    return(region_dict)
+
+def make_otherside_regions(chromo, region_dict, chromo_hypothesis_dict, chromo_anchor_contig_dict, otherside_dict, gap):
+
+    uid_ct = 0
+
+    for region_number in region_dict:
+        start = region_dict[region_number]['start']
+        stop = region_dict[region_number]['stop']
+        
+        contig_set = set()
+        for nt in range(start, stop+1):
+            if nt in chromo_anchor_contig_dict:
+                for contig in chromo_anchor_contig_dict[nt]:
+                    contig_set.add(contig)
+        
+        for nt in range(start, stop+1):
+            if nt in chromo_hypothesis_dict:                
+                for otherside_chromo in chromo_hypothesis_dict[nt]:
+                    next_nt_list = []
+                    for next_nt in chromo_hypothesis_dict[nt][otherside_chromo]:
+                        next_nt_list.append(next_nt)
+                        
+                    next_region_dict = make_anchor_regions(next_nt_list, gap)
+                    
+                    for next_region in next_region_dict:                       
+                        next_bs_list = []
+                        next_start = next_region_dict[next_region]['start']
+                        next_stop = next_region_dict[next_region]['stop']
+                        
+                        for next_nt in range(next_start, next_stop+1):
+                            #because of gaps not all nt may be present for scoring, these will be counted as a 0
+                            if next_nt in chromo_hypothesis_dict[nt][otherside_chromo]:
+                                next_bs_list.append(chromo_hypothesis_dict[nt][otherside_chromo][next_nt])
+                            else:
+                                next_bs_list.append(0)
+                        
+                        score = round(np.median(next_bs_list))
+                        
+                        
+                        if chromo not in otherside_dict:
+                            otherside_dict[chromo] = {}
+                        
+                        otherside_dict[chromo][uid_ct] = {"anchor_chromo":chromo, 
+                                                               "anchor_start":start,
+                                                               "anchor_stop":stop,
+                                                               "other_chromo":otherside_chromo,
+                                                               "other_start":next_start,
+                                                               "other_stop":next_stop,
+                                                               "score":score,
+                                                               "contig":contig_set}
+                        
+                        uid_ct += 1
+                                
+    return(otherside_dict) 
+    
+        
+'''
+The key premise here is that there are two types of reads 
+1. will be a read with unique matches on both sides (2 anchors), this is a trivial case
+2. a read with only one unique match (1 anchors) one variable.
+
+In the second case it can be informative to ask two questions:
+    a. what are all the variable loci the anchor maps to?
+    b. what is the relative read depth of those loci?
+    
+When a read is aligned the anchor(s) nucelotides (both read and reference) should be identified as should the read depth weighted variable.
+The anchor and variables should then be read out. 
+''' 
+
+def fourway_test(uid_start, next_start, uid_stop, next_stop, gap):
+    # two edges
+    if ((abs(uid_start - next_start) <= gap) or 
+        (abs(uid_stop - next_stop) <= gap) or
+        (abs(uid_start - next_stop) <= gap) or
+        (abs(uid_stop - next_start) <= gap)):
+        return(True)
+    
+    # complete overlap
+    if ((uid_start <= next_start) and 
+        (uid_stop >= next_stop)):
+        return(True)
+    
+    if ((uid_start >= next_start) and 
+        (uid_stop <= next_stop)):
+        return(True)
+    
+    # body overlap
+    if ((uid_start <= next_start) and 
+        (uid_stop >= next_start)):
+        return(True)
+
+    if ((next_start <= uid_start) and 
+        (next_stop >= uid_start)):
+        return(True)
+    
+    if ((uid_stop <= next_stop) and 
+        (uid_stop >= next_start)):
+        return(True)
+
+    if ((next_start <= uid_start) and 
+        (next_stop >= uid_start)):
+        return(True)
+
+    return(False)
+
+def collapse_other(chromoside_dict):
+    anchor_ct = 0
+    
+    to_add_dict = {}
+    
+    for uid in chromoside_dict:
+        anchor_ct += 1
+        
+        for next_uid in chromoside_dict:                  
+            if (uid != next_uid):
+                uid_chromo = chromoside_dict[uid]['anchor_chromo']
+                next_chromo = chromoside_dict[next_uid]['anchor_chromo']
+                uid_o_chromo = chromoside_dict[uid]['other_chromo']
+                next_o_chromo = chromoside_dict[next_uid]['other_chromo']
+                                
+                if (uid_chromo == next_chromo) and (uid_o_chromo == next_o_chromo):
+                    uid_start=chromoside_dict[uid]['anchor_start']
+                    uid_stop=chromoside_dict[uid]['anchor_stop']
+                    next_start=chromoside_dict[next_uid]['anchor_start']
+                    next_stop=chromoside_dict[next_uid]['anchor_stop']
+                    
+                    if fourway_test(uid_start, next_start, uid_stop, next_stop, gap):
+                        uid_o_start=chromoside_dict[uid]['other_start']
+                        uid_o_stop=chromoside_dict[uid]['other_stop']
+                        next_o_start=chromoside_dict[next_uid]['other_start']
+                        next_o_stop=chromoside_dict[next_uid]['other_stop']       
+                        
+                        if fourway_test(uid_o_start, next_o_start, uid_o_stop, next_o_stop, gap):
+                            new_score = max(chromoside_dict[uid]['score'], chromoside_dict[next_uid]['score'])
+                            
+                            print('pass 4')
+                            
+                            print(uid, next_uid)
+                            
+                            print(chromoside_dict[uid])
+                            print(chromoside_dict[next_uid])
+                                                        
+                            new_contig_set = chromoside_dict[uid]['contig']
+                            for contig in chromoside_dict[next_uid]['contig']:
+                                new_contig_set.add(contig)
+                                                            
+                            to_add_dict = {"anchor_chromo":uid_chromo, 
+                                            "anchor_start":min(uid_start, next_start),
+                                            "anchor_stop":max(uid_stop, next_stop),
+                                            "other_chromo":uid_o_chromo,
+                                            "other_start":min(uid_o_start, next_o_start),
+                                            "other_stop":max(uid_o_stop, next_o_stop),
+                                            "score":new_score,
+                                            "contig":new_contig_set}
+                            
+                            print('to_add_dict', to_add_dict)
+                            
+                            return(True, uid, next_uid, to_add_dict)
+                        
+    return(False, 0, 0, to_add_dict)
+
+def collapse_hypotheses(otherside_dict, gap):
+
+    original_size = 0
+    chromo_set = set()
+    
+    for chromo in otherside_dict:
+        chromo_set.add(chromo)
+        
+        original_size += len(otherside_dict[chromo])
+    
+    new_uid = original_size+1
+    reduced = True
+    
+    for chromo in chromo_set:
+        og_size = len(otherside_dict[chromo])
+        
+        ts = time.ctime()
+        print('reduced ',ts)
+        reduced = True
+        
+        print(chromo)
+        
+        while reduced:
+            print('starting again')
+            chromoside_dict = otherside_dict[chromo]
+            print(len(otherside_dict))
+            
+            size = len(chromoside_dict)
+            if size % 1000 == 0:
+                ts = time.ctime()
+                print('reduced ',ts)
+                outline = ('{} size, {}, {}, {}').format(chromo, size, og_size, round(size/og_size,2))
+                print(outline)
+            
+            reduced, uid, next_uid, to_add_dict = collapse_other(chromoside_dict)
+            print('now outside')
+            
+            if reduced:
+                if new_uid in otherside_dict[chromo]:
+                    print('uid collision error')
+                    1/0 
+                    
+                otherside_dict[chromo][new_uid] = to_add_dict
+            
+                del otherside_dict[chromo][uid]
+                    
+                del otherside_dict[chromo][next_uid]
+                    
+                new_uid+=1
+                
+            print('is it reduced')
+            print(len(otherside_dict))
+            print()
+            
+    return(otherside_dict)
+                              
+    
+def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap):
+    '''
+    Summarize hypotheses 
+    '''
+    gff_set = set()                  
+    otherside_dict = {}
+        
+    for chromo in hypothesis_dict:
+                            
+        nt_list = []
+        for nt in hypothesis_dict[chromo]:
+            nt_list.append(nt)
+            
+        region_dict = make_anchor_regions(nt_list, gap)
+        
+        otherside_dict = make_otherside_regions(chromo, region_dict, hypothesis_dict[chromo], anchor_contig_dict[chromo], otherside_dict, gap)
+        
+        original_size = 0
+        for chromo in otherside_dict:
+            original_size += len(otherside_dict[chromo])   
+    
+    otherside_dict = collapse_hypotheses(otherside_dict, gap)
+    
+    changed_size = 0
+    for chromo in otherside_dict:
+        changed_size += len(otherside_dict[chromo])
+    
+    resource_dict = io_load()
+        
+    each_sample = resource_dict['run_name']
+    
+    def calculate_global_disco_stats(each_sample):
+        global_disco_stats_dict ={
+            'rd_df':0, 'rd_global_median': 0, 'rd_global_std': 0,
+            'disco_df':0, 'disco_global_median': 0, 'disco_global_std': 0,
+            'split_df':0, 'split_global_median': 0, 'split_global_std': 0}
+        
+        pickle_name = ('{}/mpileup_{}_RD.p').format(pickles_dir, each_sample)
+        rd_df = pickle_loader(pickle_name, 'df')
+        
+        fzero = rd_df.replace(0, np.NaN)
+        rd_global_median = fzero["ct"].median()
+        rd_global_std = fzero["ct"].std()
+        
+        global_disco_stats_dict['rd_df'] = rd_df
+        global_disco_stats_dict['rd_global_median'] = rd_global_median
+        global_disco_stats_dict['rd_global_std'] = rd_global_std
+        
+        pickle_name = ('{}/mpileup_{}_discordant.p').format(pickles_dir, each_sample)
+        disco_df = pickle_loader(pickle_name, 'df')
+        
+        fzero = disco_df.replace(0, np.NaN)
+        disco_global_median = fzero["ct"].median()
+        disco_global_std = fzero["ct"].std()
+        
+        global_disco_stats_dict['disco_df'] = disco_df
+        global_disco_stats_dict['disco_global_median'] = disco_global_median
+        global_disco_stats_dict['disco_global_std'] = disco_global_std
+        
+        pickle_name = ('{}/mpileup_{}_split.p').format(pickles_dir, each_sample)
+        split_df = pickle_loader(pickle_name, 'df')
+        
+        fzero = split_df.replace(0, np.NaN)
+        split_global_median = fzero["ct"].median()
+        split_global_std = fzero["ct"].std()
+               
+        global_disco_stats_dict['split_df'] = split_df
+        global_disco_stats_dict['split_global_median'] = split_global_median
+        global_disco_stats_dict['split_global_std'] = split_global_std
+        
+        return(global_disco_stats_dict)
+    
+    def collect_stats(chromo, start, stop, mpileup_df, runmode, score_store):
+        anchor_store = ('{}:{}-{}').format(
+            chromo, start, stop)
+        
+        if runmode == 'rd':
+            type_df = mpileup_df['rd_df']
+            global_median = mpileup_df['rd_global_median']
+            global_std = mpileup_df['rd_global_std']
+            
+            if anchor_store in score_store[runmode]:
+                sub_df = score_store[runmode][anchor_store] 
+            else:
+                sub_df = type_df.loc[(type_df["chromo"] == chromo) & 
+                   (type_df["nuc"] >= start) & 
+                   (type_df["nuc"] <= stop)]
+                
+                score_store[runmode][anchor_store] = sub_df
+        
+        if runmode == 'split':
+            type_df = mpileup_df['split_df']
+            global_median = mpileup_df['split_global_median']
+            global_std = mpileup_df['split_global_std']
+            
+            if anchor_store in score_store[runmode]:
+                sub_df = score_store[runmode][anchor_store] 
+            else:
+                sub_df = type_df.loc[(type_df["chromo"] == chromo) & 
+                   (type_df["nuc"] >= start) & 
+                   (type_df["nuc"] <= stop)]
+                
+                score_store[runmode][anchor_store] = sub_df
+            
+        if runmode == 'disco':
+            type_df = mpileup_df['disco_df']
+            global_median = mpileup_df['disco_global_median']
+            global_std = mpileup_df['disco_global_std']  
+                
+            if anchor_store in score_store[runmode]:
+                sub_df = score_store[runmode][anchor_store] 
+            else:
+                sub_df = type_df.loc[(type_df["chromo"] == chromo) & 
+                   (type_df["nuc"] >= start) & 
+                   (type_df["nuc"] <= stop)]
+                
+                score_store[runmode][anchor_store] = sub_df
+                                
+        sub_median = sub_df["ct"].median()
+        sub_sum = sub_df["ct"].sum()
+        
+        if sub_sum > 3:
+
+            if global_std == 0:
+                global_std = 1
+                
+            difference_ratio = (sub_median-global_median)/global_std
+        
+            return(difference_ratio, score_store)
+        
+        return(0, score_store)
+
+    def disco_depth_stats(uid_deets, global_disco_stats_dict, score_store):        
+        
+        anchor_chromo = uid_deets['anchor_chromo']
+        anchor_start = uid_deets['anchor_start']
+        anchor_stop = uid_deets['anchor_stop']
+        
+        other_chromo = uid_deets['other_chromo']
+        other_start = uid_deets['other_start']
+        other_stop = uid_deets['other_stop']
+        
+        score = otherside_dict[chromo][uid]['score']
+
+        rd_anchor_term, score_store = collect_stats(
+            anchor_chromo, anchor_start, 
+            anchor_stop, global_disco_stats_dict, "rd", score_store)
+                    
+        rd_other_term, score_store = collect_stats(
+            other_chromo, other_start, 
+            other_stop, global_disco_stats_dict, "rd", score_store)
+        
+        split_anchor_term, score_store = collect_stats(
+            anchor_chromo, anchor_start, 
+            anchor_stop, global_disco_stats_dict, "split", score_store)
+                
+        split_other_term, score_store = collect_stats(
+            other_chromo, other_start, 
+            other_stop, global_disco_stats_dict, "split", score_store)
+                
+        disco_anchor_term, score_store = collect_stats(
+            anchor_chromo, anchor_start, 
+            anchor_stop, global_disco_stats_dict, "disco", score_store)
+                
+        disco_other_term, score_store = collect_stats(
+            other_chromo, other_start, 
+            other_stop, global_disco_stats_dict, "disco", score_store)
+        
+        
+        relative_score = (rd_anchor_term * score * rd_other_term + 
+            split_anchor_term * score* split_other_term +
+            disco_anchor_term * score* disco_other_term)
+        
+        return(relative_score, score_store)
+        
+    global_disco_stats_dict = calculate_global_disco_stats(each_sample)
+    
+    score_store = {'rd':{}, 'split':{}, 'disco':{}}
+    top_performer_dict = {}
+
+    for chromo in otherside_dict:
+        chromo_size = len(otherside_dict[chromo])
+        pissct = 0
+        for uid in otherside_dict[chromo]:
+            
+            outline = ('chromo: {}, uid: {}, ct: {} out of {}').format(
+                chromo, uid, pissct, chromo_size)
+            pissct+=1
+                        
+            anchor_chromo = otherside_dict[chromo][uid]['anchor_chromo']
+            anchor_start = otherside_dict[chromo][uid]['anchor_start']
+            anchor_stop = otherside_dict[chromo][uid]['anchor_stop']
+            other_chromo = otherside_dict[chromo][uid]['other_chromo']
+            other_start = otherside_dict[chromo][uid]['other_start']
+            other_stop = otherside_dict[chromo][uid]['other_stop']
+            score = otherside_dict[chromo][uid]['score']
+            contig_set = otherside_dict[chromo][uid]['contig']
+            
+            relative_score, score_store = disco_depth_stats(otherside_dict[chromo][uid],
+                        global_disco_stats_dict, score_store)
+            
+            if relative_score > 0:
+                if chromo not in top_performer_dict:
+                    top_performer_dict[chromo] = {}
+                    
+                anchor_site = ('{anchor_start}-{anchor_stop}').format(
+                    anchor_start = anchor_start,
+                    anchor_stop = anchor_stop)
+            
+                if anchor_site in top_performer_dict[chromo]:
+                    if relative_score > top_performer_dict[chromo][anchor_site]['relative_score']:
+                        print('Replacing: ', top_performer_dict[chromo][anchor_site])
+                        top_performer_dict[chromo][anchor_site]['relative_score'] = relative_score
+                        top_performer_dict[chromo][anchor_site]['uid'] = uid
+                        print('with: ', top_performer_dict[chromo][anchor_site])
+                        
+                        
+                if anchor_site not in top_performer_dict[chromo]:
+                    top_performer_dict[chromo][anchor_site] = {'relative_score': relative_score, 'uid': uid}
+
+    
+    top_performer_set = set()
+    for chromo in top_performer_dict:
+        for anchor_site in top_performer_dict[chromo]:
+            uid = top_performer_dict[chromo][anchor_site]['uid']
+            top_performer_set.add(uid)
+    
+    for uid in top_performer_set:
+        for chromo in otherside_dict:
+            if uid in otherside_dict[chromo]:
+                anchor_chromo = otherside_dict[chromo][uid]['anchor_chromo']
+                anchor_start = otherside_dict[chromo][uid]['anchor_start']
+                anchor_stop = otherside_dict[chromo][uid]['anchor_stop']
+                other_chromo = otherside_dict[chromo][uid]['other_chromo']
+                other_start = otherside_dict[chromo][uid]['other_start']
+                other_stop = otherside_dict[chromo][uid]['other_stop']
+                score = otherside_dict[chromo][uid]['score']
+                contig_set = otherside_dict[chromo][uid]['contig']
+                                
+                otherside = ('{other_chromo}:{other_start}-{other_stop}').format(
+                    other_chromo = other_chromo,
+                    other_start = other_start,
+                    other_stop = other_stop)
+                
+                contig = ''
+                for each in contig_set:
+                    outline = ('{};').format(each)
+                    contig += (outline)
+                contig = contig[:-1]
+
+                process = False
+                if args.return_all:
+                    process = True
+                else:
+                    if score >= c_min_score:
+                        process = True
+                        
+                if process:
+                
+                    gff_line = ('{chromo}\terisapfel\t{uid}_anchor_split'
+                                '\t{start}\t{stop}\t.\t.\t{score}'
+                                '\tnode_uid={uid};otherside={otherside}_breeze;contig={contig}\n').format(
+                                    chromo = anchor_chromo,
+                                    uid = uid,
+                                    start = anchor_start,
+                                    stop = anchor_stop,
+                                    score = score,
+                                    otherside = otherside,
+                                    contig = contig)
+                                    
+                    gff_set.add(gff_line)
+                    
+                    anchorside = ('{chromo}:{start}-{stop}').format(
+                        chromo = anchor_chromo,
+                        start = anchor_start,
+                        stop = anchor_stop)
+            
+                    rev_gff_line = ('{chromo}\terisapfel\t{uid}_breeze_split'
+                                '\t{start}\t{stop}\t.\t.\t{score}'
+                                '\tnode_uid={uid}_anchor;otherside={anchorside};contig={contig}\n').format(
+                                    chromo = other_chromo,
+                                    uid = uid,
+                                    start = other_start,
+                                    stop = other_stop,
+                                    score = score,
+                                    anchorside = anchorside,
+                                    contig = contig)
+                    
+                    gff_set.add(rev_gff_line)
+            
+    return(gff_set)
+
+def parse_msa_file(filename):
+    '''
+    Parse multiple sequence alignment file to dictionaries
+
+    Parameters
+    ----------
+    filename : string
+        multiple sequence alignment file name
+
+    Returns
+    -------
+    msa_dict : dictionary containing hashed name (key) to sequence
+    hash_to_name : dictionary containg hashed name (key) to Read ID 
+
+    '''
+    infile = open(filename)
+    hash_to_name = {}
+    msa_dict = {}
+    seq = ''
+    
+    for line in infile:
+        if line[0] == '>':
+            name = (line.split('>')[1].split('_')[0].strip())
+            hname = str(hash(name))
+            
+            if seq != '':
+                msa_dict[hname] = seq
+    
+            hash_to_name[hname] = name
+            
+            seq = ''
+        else:
+            seq += line.strip()
+            
+    #picks up any trailers
+    msa_dict[hname] = seq
+    infile.close()
+    
+    return(msa_dict, hash_to_name)
+    
+def parse_msa_kmer(seq_1, seq_2):
+    '''
+    
+
+    Parameters
+    ----------
+    seq_1 : string
+        query string aligned
+    seq_2 : string
+        source string aligned
+        
+    Returns
+    -------
+    mismatch_ct: int representing mismatch between two sequences
+    match_ct : int representing match 
+
+    '''
+    match_ct = 0
+    mismatch_ct = 0
+    phase = 0
+    for each in range(len(seq_1)):
+        
+        if phase == 0:
+            if ((seq_1[each] != '-') and (seq_2[each] != '-')):
+                phase = 1
+            
+        if phase == 1:
+            if (len(seq_1[each:]) == seq_1[each:].count('-')) or (len(seq_2[each:]) == seq_2[each:].count('-')):
+                phase = 2
+                
+            else: 
+                if (seq_1[each] != seq_2[each]):
+                    mismatch_ct += 1 
+                else:
+                    match_ct += 1
+                         
+    return(mismatch_ct, match_ct)
+    
+def build_clusters(distance_dict, msa_dict, hash_to_name, contig_seq_dict):
+    cluster = 0
+    name_to_cluster_dict = {}
+    cluster_to_name_dict = {}
+    
+    for compare, deets in distance_dict.items():
+        mismatch, match = deets
+        if ((mismatch <= 1) or ((mismatch/max(1,float(match))) <= 0.04)) and (match >= 25):
+            name1, name2 = compare.split('_')
+            
+            if (name1 in name_to_cluster_dict) and (name2 in name_to_cluster_dict):
+                name1_cluster_set = name_to_cluster_dict[name1]
+                for eachc in name1_cluster_set:
+                    name1_list = cluster_to_name_dict[eachc]
+                
+                    if name2 not in name1_list:
+                        name_to_cluster_dict[name2].union(name1_cluster_set)
+                        cluster_to_name_dict[eachc].append(name2)
+                    
+                name2_cluster_set = name_to_cluster_dict[name2]
+                for eachc in name2_cluster_set:
+                    name2_list = cluster_to_name_dict[eachc]
+                
+                    if name1 not in name2_list:
+                        name_to_cluster_dict[name1].union(name2_cluster_set)
+                        cluster_to_name_dict[eachc].append(name1)
+            
+            if (name1 in name_to_cluster_dict) and (name2 not in name_to_cluster_dict):
+                temp_cluster_set = name_to_cluster_dict[name1]
+                name_to_cluster_dict[name2] = temp_cluster_set
+                for eachc in temp_cluster_set:
+                    cluster_to_name_dict[eachc].append(name2)
+                
+            if (name1 not in name_to_cluster_dict) and (name2 in name_to_cluster_dict):
+                temp_cluster_set = name_to_cluster_dict[name2]
+                name_to_cluster_dict[name1] = temp_cluster_set
+                for eachc in temp_cluster_set:
+                    cluster_to_name_dict[eachc].append(name1)
+            
+            if (name1 not in name_to_cluster_dict) and (name2 not in name_to_cluster_dict) :
+                new_cluster = set()
+                new_cluster.add(cluster)
+                name_to_cluster_dict[name1] = new_cluster
+                name_to_cluster_dict[name2] = new_cluster
+                cluster_to_name_dict[cluster] = [name1, name2]
+                
+                cluster+=1
+     
+    prefix_list = []
+    for cluster, hnames in cluster_to_name_dict.items():
+        node_name = ('{hypo}_{cluster}').format(cluster=cluster, hypo=hypo)
+        cluster_seq_name = ('{temp}/{node_name}_cluster_seq.fa').format(node_name=node_name, temp=temp_dir)
+        cluster_seq = open(cluster_seq_name, 'w')
+
+        if len(hnames) > 1:
+            for hname in hnames:
+                name = hash_to_name[hname]
+                seq = msa_dict[hname].replace('-','')
+                
+                outline = ('>{}\n{}\n').format(name, seq)
+                cluster_seq.write(outline)
+            cluster_seq.close()
+            
+            cluster_align_name = ('{temp}/{node_name}_cluster_aligned.msf').format(node_name=node_name, temp=temp_dir)
+            bashCommand = ('mafft --auto --adjustdirection --globalpair --quiet {} > {}').format(cluster_seq_name, cluster_align_name)
+            subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
+            print(bashCommand)
+            
+            bashCommand = ('cons -name {}_{} -plurality 1 {} -outseq {}').format(node_name, len(hnames), cluster_align_name, cluster_seq_name)
+            subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
+            print(bashCommand)
+            
+            contig_seq_dict = check_coverage(node_name, cluster_seq_name, contig_seq_dict)
+            
+            prefix = ('{temp}/{node_name}').format(temp=temp_dir, node_name=node_name)
+            prefix_list.append(prefix)
+
+    return(prefix_list, contig_seq_dict)
+
+def parse_mge(mge_file_name):
+    mge_nt_lookup_dict = {}
+    mge_region_lookup_dict = {}
+    mge_name_to_region_dict = {}
+    mge_region_to_name_dict = {}
+    
+    
+    mge_file = open(mge_file_name)
+    
+    for line in mge_file:
+        line = line.strip()
+        
+        if line[0] != '#':
+            chromo = line.split('\t')[0]
+            start = int(line.split('\t')[3])
+            stop = int(line.split('\t')[4])
+            name = line.split('\t')[8]
+                        
+            mge_name_to_region_dict[name] = (start, stop)
+            
+            if chromo not in mge_region_to_name_dict:
+                mge_region_to_name_dict[chromo] = {}
+            
+            mge_region_to_name_dict[chromo][(start,stop)] = name
+                        
+            if chromo not in mge_nt_lookup_dict:
+                mge_nt_lookup_dict[chromo] = {}
+                
+            for nt in range((start - flank_nt), (stop + flank_nt + 1)):
+                if nt not in mge_nt_lookup_dict[chromo]:
+                    mge_nt_lookup_dict[chromo][nt] = set()
+                
+                mge_nt_lookup_dict[chromo][nt].add(name)
+                
+            if chromo not in mge_region_lookup_dict:
+                mge_region_lookup_dict[chromo] = set()
+                
+            mge_region_lookup_dict[chromo].add((start, stop))
+                
+    mge_file.close()
+    
+    return(mge_nt_lookup_dict, mge_region_lookup_dict, mge_name_to_region_dict, mge_region_to_name_dict)
+
+if args.mge_file:
+    run_mge = True
+    mge_nt_lookup_dict, mge_region_lookup_dict, mge_name_to_region_dict, mge_region_to_name_dict = parse_mge(args.mge_file)
+               
 
 """ Step One """
 if args.make:
-    """ This command uses bwa mem to align the fastq files to the reference genome
+    """ This command uses bwa mem to align the paired end (required) fastq files to the reference genome
     These are passed to samblaster which seperates out discordant and split reads
-    and then samtools for conversion and index generation.
+    and then samtools for conversion to bam and bam index generation.
+    
+    Resource file is created to record and maintain run associated 
+    information such as file names and parameters. This is located in 
+    /idx/resources.tab
+
     """
     
     chromo_size_dict = {}
     resource_dict = {}
     
-    #Create default directories
-    
-    def make_subdirectory(is_path,subdir):
-        new_dir = ('{}/{}').format(is_path, subdir)
-        if not os.path.exists(new_dir):
-            os.makedirs(new_dir)
-    
-    make_subdirectory(s_path,'bam')
-    make_subdirectory(s_path,'idx')
-    make_subdirectory(s_path,'cluster')
-    make_subdirectory(s_path,'pickles')
     io_make()
     
     resource_dict['run_name']=args.run_name
     resource_dict['results_dir']=args.run_name
     resource_dict['genome_fa']=args.fa_file
-    #resource_dict['genome_gff']=args.gff_file
-           
+    
     if not args.paired_end:
         end_is = 'pe'
         resource_dict['end_is']=end_is
@@ -802,11 +2179,12 @@ if args.make:
         infastq_1=('fastq_1={}\n').format(args.fastq_1)
         infastq_2=('fastq_2={}\n').format("")
         
-    output_filename=('output_file={bam_dir}/{output_file}\n'
+    output_filename = ('output_file={bam_dir}/{output_file}\n'
                      'mkdir -p {bam_dir}\n'
                      'echo bam_dir $PWD + {bam_dir}\n').format(
         bam_dir=bam_dir, 
         output_file=output_file)
+                         
     #command_file.write(ref_fa + ref_gff + infastq_1 + infastq_2 + output_filename)
     command_file.write(ref_fa + infastq_1 + infastq_2 + output_filename)
     
@@ -838,8 +2216,7 @@ if args.make:
     command_file.close()
     
     bash_command = ('bash {}').format(command_file_name)
-    output = subprocess.check_output([bash_command],stderr=subprocess.STDOUT,shell=True)
-    print(output)
+    subprocess.run([bash_command],stderr=subprocess.STDOUT,shell=True)
     
     header_file_name = ('{}{}_split.sam').format(bam_dir, output_file)
     read_file = open(header_file_name)
@@ -856,48 +2233,46 @@ if args.make:
     resource_dict['bam_file'] = (bam_dir+output_file+str('.bam'))
     resource_dict['discordant_file'] = (bam_dir+output_file+str('_discordant.bam'))
     resource_dict['split_file'] = (bam_dir+output_file+str('_split.bam'))    
-    resource_dict['soft_file'] = (bam_dir+output_file+str('_soft.bam'))
+    #resource_dict['soft_file'] = (bam_dir+output_file+str('_soft.bam'))
     
     resource_dict['sam_file'] = (bam_dir+output_file+str('.sam'))
     resource_dict['discordant_sam_file'] = (bam_dir+output_file+str('_discordant.sam'))
     resource_dict['split_sam_file'] = (bam_dir+output_file+str('_split.sam'))
-    resource_dict['soft_sam_file']=(bam_dir+output_file+str('_soft.sam'))
+    #resource_dict['soft_sam_file']=(bam_dir+output_file+str('_soft.sam'))
     
     resource_dict['chromo_size']=(pickle_name)
+    
+    #handle read_type
+    if not args.read_type_list:
+        read_type_list = ['RD','discordant','split']
+    else:
+        read_type_list = args.read_type_list
+        
+    resource_dict['read_types']=read_type_list
 
     io_append(resource_dict)
     
 """ Step Two"""
 if args.depth_analysis:    
     """
-    02.22.19 - depth_analysis
-        Function: pulls read depths from bam files into chromosomes.
+    Depth_analysis
+        Function: For each read type ('RD','discordant','split')
+        1. Open corresponding bam file
+        2. Pulls read counts from bam files into chromosomes.
+        3. Depth statistics, medians and std are calculated. 
+        * NB - these stats 
     """    
     resource_dict = io_load()
     print(resource_dict)
-    if 'genome_fa' not in resource_dict:
-        1/0
         
     fa_file = resource_dict['genome_fa']
     each_sample = resource_dict['run_name']
     bam_file = resource_dict['bam_file']
     sam_file = resource_dict['sam_file']
-    soft_file = resource_dict['soft_file']
-    soft_sam_file = resource_dict['soft_sam_file']
+    # soft_file = resource_dict['soft_file']
+    # soft_sam_file = resource_dict['soft_sam_file']
+    read_type_list = resource_dict['read_types']
     
-
-    #handle read_type
-    if not args.read_type_list:
-        read_type_list = ['RD','discordant','split','soft']
-    else:
-        read_type_list = args.read_type_list
-        
-    resource_dict['read_types']=read_type_list
-
-    #handle run_name    
-    #if args.run_name:
-    #    path = bam_dir
-    #    each_sample = output_file
     if not args.filter_bed:
         filter_by_bed = False
         
@@ -912,133 +2287,7 @@ if args.depth_analysis:
             else:
                 print('Please only specify a single bed file for filtering')
                 1/0
-        
-    def run_soft(bam_file, soft_sam_file, soft_file):
-        is_softfile = open(soft_sam_file,'w')
-        
-        #sam_file_name = ('{}/temp_global.sam').format(bam_dir)
-        infile = open(sam_file)
-        for line in infile:
-            if line[0] == '@':
-                is_softfile.write(line)
-            if line[0] != '@':
-                cigar = line.split('\t')[5]
-                if '*' not in cigar: 
-                    size = parse_cigar(cigar, 'non-matching')
-                    if size >= 10:
-                        is_softfile.write(line)
-        infile.close()
-        is_softfile.close()
-                    
-        # bashCommand = ('module load samtools/intel/1.14')
-        # print(bashCommand)
-        # output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-        
-        bashCommand = ('module load samtools/intel/1.14\n'
-                       'samtools view -Sb {} -o {}/temp_unsorted.bam').format(soft_sam_file, bam_dir)            
-        print(bashCommand)
-        output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-        
-        bashCommand = ('module load samtools/intel/1.14\n'
-                       'samtools sort {}/temp_unsorted.bam -o {}').format(bam_dir, soft_file)
-        print(bashCommand)
-        output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-        
-        bashCommand = ('module load samtools/intel/1.14\n'
-                       'samtools index {}').format(soft_file)
-        print(bashCommand)
-        output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-
-    def run_bedgraph(bam_file, each_sample):
-        print('\tRunning bedtools genomecov on '+ str(infile_name) + '...')
-        #module load bedtools/intel/2.29.2\n
-        
-        # bashCommand = ('source /scratch/ps163/tiny_fy/module_load.sh\n')
-        # print(bashCommand)
-        # output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-
-        bashCommand = ('module load bedtools/intel/2.29.2\n'
-                       'bedtools genomecov -bg -ibam {} > {}{}.bedgraph').format(bam_file, idx_dir, each_sample)
-        print(bashCommand)
-        output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-
-    def run_mpileup(infile_name, each_sample, runmode):  
-        # bashCommand = ('module load samtools/intel/1.14')
-        # print(bashCommand)
-        # output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-                  
-        if runmode == 'RD':
-            print('\tRunning samtools to determine sample depth...')
-            if filter_by_bed:
-                bashCommand = ('module load samtools/intel/1.14\n'
-                               'samtools mpileup -B -C 50 -f {} {} -l {} -a -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)        
-            else:
-                bashCommand = ('module load samtools/intel/1.14\n'
-                               'samtools mpileup -B -C 50 -f {} {} -a -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)                        
-            print(bashCommand)
-            output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-
-        if runmode == 'discordant':
-            print('\tRunning samtools to determine discordant read depth...')
-            if filter_by_bed:
-                bashCommand = ('module load samtools/intel/1.14\n'
-                               'samtools mpileup -B -C 25 -f {} {} -l {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)            
-            else:
-                bashCommand = ('module load samtools/intel/1.14\n'
-                               'samtools mpileup -B -C 25 -f {} {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)
-            print(bashCommand)
-            output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-            
-        if runmode == 'split':
-            print('\tRunning samtools to determine split read depth...')
-            if filter_by_bed:
-                bashCommand = ('module load samtools/intel/1.14\n'
-                               'samtools mpileup -B -C 10 -f {} {} -l {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)     
-            else:
-                bashCommand = ('module load samtools/intel/1.14\n'
-                               'samtools mpileup -B -C 10 -f {} {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)     
-            print(bashCommand)            
-            output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-            
-        if runmode == 'soft':
-            print('\tRunning samtools to determine soft clip read depth...')
-            if filter_by_bed:
-                bashCommand = ('module load samtools/intel/1.14\n'
-                               'samtools mpileup -B -C 25 -f {} {} -l {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)            
-            else:
-                bashCommand = ('module load samtools/intel/1.14\n'
-                               'samtools mpileup -B -C 25 -f {} {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)
-            print(bashCommand)
-            output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-            
-    def process_bam(infile_name, read_type):
-        # bashCommand = ('module load samtools/intel/1.14')
-        # print(bashCommand)
-        # output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-        
-        print('\tRunning samtools to determine total mapped reads...')
-        bashCommand = ('module load samtools/intel/1.14\n'
-                       'samtools view -F 0x4 {} | cut -f 1 | sort | uniq | wc -l > temp.ct').format(infile_name)
-        print(bashCommand) 
-        output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-        
-        temp_ct_file = open('temp.ct')
-        for line in temp_ct_file:
-            line = line.strip()
-            total_ct = int(line)
-        temp_ct_file.close()
-        
-        if read_type == 'RD':
-            resource_dict['total_RD_aligned_reads']=total_ct
-        if read_type == 'split':
-            resource_dict['total_split_aligned_reads']=total_ct
-        if read_type == 'discordant':
-            resource_dict['total_discordant_aligned_reads']=total_ct
-        if read_type == 'soft':
-            resource_dict['total_soft_aligned_reads']=total_ct
-                
-        return(total_ct)
-                                
+                                        
     for each_type in read_type_list:
         if each_type == 'RD':
             infile_name = resource_dict['bam_file']
@@ -1046,56 +2295,38 @@ if args.depth_analysis:
             infile_name = resource_dict['split_file']
         if each_type == 'discordant':
             infile_name = resource_dict['discordant_file']
-        if each_type == 'soft':
-            infile_name = resource_dict['soft_file']
         
         outline = ('\nProcessing sample {}...').format(each_sample)
         print(outline)
         
-        if each_type == 'soft':
-            run_soft(bam_file, soft_sam_file, soft_file)
-        
-        total_reads = process_bam(infile_name, each_type)
-        
         run_bedgraph(bam_file, each_sample)
         
         print('\tParsing mpileup into chromosomes...')
+        run_mpileup(infile_name, each_sample, each_type)
 
         populated=False
         mpileup_df = []
-        
-        run_mpileup(infile_name, each_sample, each_type)
-
         raw_mpileup = str(pickles_dir + '/' + each_sample + '_' + each_type + '.mpileup')
         temp_df = pd.read_csv(raw_mpileup, sep='\t', header=None, names = ['chromo', 'nuc', 'base', 'ct', 'val1', 'val2'])
 
         outline = ('\tProcessing {}...').format(each_type)
         print(outline)
-        
-        if total_reads > 0:
-            rpkm = lambda x: float(150*int(x)*10**9)/float(total_reads)            
-        else:
-            1/0
-            rpkm = lambda x: float(x)
-        
+                
         if populated:
-            mpileup_df['rpkm'] = temp_df['ct'].map(rpkm)
             mpileup_df['chromo']=temp_df['chromo']
             
-        else:
+        if not populated:
             populated = True
             mpileup_df = temp_df[['ct']].copy()
             mpileup_df['nuc']=temp_df['nuc']
-            mpileup_df['rpkm'] = temp_df['ct'].map(rpkm)
             mpileup_df['chromo']=temp_df['chromo']
-                       
+                                   
         pickle_name = ('{}/mpileup_{}_{}.p').format(pickles_dir, each_sample, each_type)
         mpileup_df.to_pickle(pickle_name)
         print(mpileup_df.head())
 
-        fzero = mpileup_df.replace(0, np.NaN)
-        fg_median = fzero["ct"].median()
-        fg_std = fzero["ct"].std()
+        fg_median = mpileup_df["ct"].mean()
+        fg_std = mpileup_df["ct"].std()
         
         zscore_read_type = ('{}_zscore_median').format(each_type)
         resource_dict[zscore_read_type] = fg_median
@@ -1107,8 +2338,8 @@ if args.depth_analysis:
 """ Step Three """
 if args.peaks:
     """
-    02.28.19 - peak detector
-        additional feature, filter regions of chromosome with large deletions
+    Peak detector
+    1. load 'mpileup' files into dataframe pickles.    additional feature, filter regions of chromosome with large deletions
         
     """
     resource_dict = io_load()
@@ -1117,7 +2348,7 @@ if args.peaks:
     each_sample = resource_dict['run_name']
     
     chromo_size_p = pickle_loader(resource_dict['chromo_size'], 'dict')
-
+    
     chromo_list = []
     for chromo in chromo_size_p:
         chromo_list.append(chromo)     
@@ -1136,128 +2367,22 @@ if args.peaks:
         purity = (float(args.min_purity))
     else:
         purity = 0.9
-        
-    #handle run_name    
-#    if args.run_name:
-#        path = bam_dir
-#        each_sample = output_file
-                
+                        
     file_name_lookup = []
     depth_dict = {}
-    chromo_depth_dict = {}
+    # chromo_depth_dict = {}
     
-    def long_walk(seed, long_range, rpkm_dict):
-        nt = seed
-        miss_ct = 0
-        depth = []
-
-        for s_step in long_range:
-            if s_step in rpkm_dict:
-                depth.append(float(rpkm_dict[s_step]))
-                nt=s_step
-                miss_ct = 0
-                
-            else:
-                miss_ct += 1
-
-            if miss_ct >= 3*gap:
-                return(nt,depth)
-                
-        return(nt,depth)
-    
-    def local_walk(short_range, rpkm_dict):
-        hit_ct = 0
-
-        for s_step in short_range:
-            if s_step in rpkm_dict:
-                hit_ct += 1
-                
-            if hit_ct >= (purity*min_length):
-                return(True)
-        else:
-            return(False)
-            
-    def build_trace(subz_df, suby_df, each_type, c_median, g_median):
-        print('running build_trace')
-        
-        subz_dict = subz_df.to_dict(orient='index')
-        subz_rpkm_dict = {}
-        for index, deets in subz_dict.items():
-            nuc = int(deets['nuc'])
-            rpkm = float(deets['ct'])
-            subz_rpkm_dict[nuc]=rpkm
-            
-        suby_dict = suby_df.to_dict(orient='index')
-        suby_rpkm_dict = {}
-        for index, deets in suby_dict.items():
-            nuc = int(deets['nuc'])
-            rpkm = float(deets['ct'])
-            suby_rpkm_dict[nuc]=rpkm
-        
-        seed_set = set()
-        
-        if len(subz_rpkm_dict) > 1:
-            min_nuc = min(subz_rpkm_dict)
-            max_nuc = max(subz_rpkm_dict)                            
-    
-            for nuc, rpkm in subz_rpkm_dict.items():            
-                if (nuc not in seed_set):
-                    short_range = range(nuc-int(min_length/2),nuc+int(min_length/2))
-                    #print(short_range)
-                    
-                    if(local_walk(short_range, subz_rpkm_dict)) or (each_type != 'RD'):
-                        left_long_range = range(min_nuc-int(min_length/2),nuc)[::-1]
-                        right_long_range = range(nuc,max_nuc+int(min_length/2))
-                        
-                        start, depth = long_walk(nuc, left_long_range, suby_rpkm_dict)          
-                        stop, depth_2 = long_walk(nuc, right_long_range, suby_rpkm_dict)
-            
-                        depth += depth_2
-                        
-                        depth_median = np.median(depth)
-                        depth_std = np.std(depth)
-    
-                        for nt in range(start, stop+1):
-                            seed_set.add(nt)
-                            
-                        # if (c_median <= 0):
-                        #     print('c_median', c_median)
-                        #     1/0
-                            
-                        if (start >= 0) and (stop >= 0):
-                            rel_c = depth_median/float(c_median)
-                            rel_g = depth_median/float(g_median)
-                            print('rel_c', depth_median, c_median)
-                            
-                            outline = ('{chromo}\t{each_type}_depth\tCNV'
-                                       '\t{start}\t{stop}\t{rel_c}\t.\t.'
-                                       '\tID={chromo}:{start}-{stop};rel_chromosome_RD={rel_c};rel_genome_RD={rel_g};sample={sample}\n'
-                                       ).format(
-                                           chromo=every_chromo, 
-                                           each_type=each_type, 
-                                           start=start, stop=stop, 
-                                           rel_c=round(rel_c,2), 
-                                           rel_g = round(rel_g,2), 
-                                           sample = each_sample)
-                            depth_gff_outfile.write(outline)
-                            print(outline)
-                            
-                            locus = ('{}:{}-{}').format(every_chromo, start, stop)
-                            
-                            depth_dict[locus] = [rel_c, rel_g, depth_std]
-
     for each_type in read_type_list:
-        print(each_type)
-        depth_gff_file_name = ('{}/{}_{}_depth.gff').format(idx_dir, each_sample, each_type)
+        print('Processing ', each_type)
+        
+        depth_gff_file_name = ('{}/{}_{}_depth.gff').format(final_output_dir, each_sample, each_type)
         depth_gff_outfile = open(depth_gff_file_name,'w')
         
-        chromo_gff_file_name = ('{}/{}_{}_chromosome.gff').format(idx_dir, each_sample, each_type)
+        chromo_gff_file_name = ('{}/{}_{}_chromosome.gff').format(final_output_dir, each_sample, each_type)
         chromo_gff_outfile = open(chromo_gff_file_name,'w')
     
         pickle_name = ('{}/mpileup_{}_{}.p').format(pickles_dir, each_sample, each_type)
         mpileup_df = pickle_loader(pickle_name, 'df')
-        #print(mpileup_df.head())
-        #1/0
                 
         zscore_read_type = ('{}_zscore_median').format(each_type)
         g_median = resource_dict[zscore_read_type]
@@ -1265,60 +2390,1218 @@ if args.peaks:
         g_std = resource_dict[zscore_read_type]
                         
         outline = ('Global Median:\t{}\nGlobal Std:\t{}\n').format(g_median,g_std)
-        #print(outline)
-        #1/0
-        
+        print(outline)
+         
         for every_chromo in chromo_list:
-            print('chromo', every_chromo)
             m_chromo_df = mpileup_df.loc[mpileup_df["chromo"] == every_chromo]
-            print(m_chromo_df.head())
-            #1/0
-            fzero = m_chromo_df.replace(0, np.NaN)
-            c_median = fzero["ct"].median()
-            c_std = fzero["ct"].std()
-            chromo_annu = c_median+c_std
             
-            print(g_median, g_std, c_median, c_std, chromo_annu)
+            c_median = m_chromo_df["ct"].mean()
+            c_std = m_chromo_df["ct"].std()
+            chromo_annu = c_median+c_std
             
             start, stop = 1, len(m_chromo_df)
             outline = ('{chromo}\t{each_type}_depth\tChromosome\t{start}\t{stop}\t{c_median}\t.\t.\tID={chromo}:{start}-{stop};Median_RD={c_median};Std_RD={c_std};rel_genome_RD={rel_g};sample={sample}\n').format(chromo=every_chromo, each_type=each_type, start=start, stop=stop, c_median=c_median, c_std=c_std, rel_g=round(c_median/float(g_median),2), sample=each_sample)
             chromo_gff_outfile.write(outline)
-            print(outline)
-            
-            if each_type == 'RD':
-                chromo_depth_dict[every_chromo]=[(g_median/float(c_median)), (g_std/float(c_std))]
         
         for every_chromo in chromo_list:
             
             m_chromo_df = mpileup_df.loc[mpileup_df["chromo"] == every_chromo]
-  
+    
             if each_type == 'RD':
                 fzero = m_chromo_df.replace(0, np.NaN)
-                c_median = fzero["ct"].median()
+                c_median = fzero["ct"].mean()
                 c_std = fzero["ct"].std()
-            else:
-                c_median = max(m_chromo_df["ct"].median(),1)*chromo_depth_dict[every_chromo][0]
-                c_std = m_chromo_df["ct"].std()*chromo_depth_dict[every_chromo][1]
                 
-            subz_df = m_chromo_df.loc[(mpileup_df["ct"] >= (c_median + 3*c_std))]
-            suby_df = m_chromo_df.loc[mpileup_df["ct"] >= (c_median + c_std)]
+            else:
+                c_median = m_chromo_df["ct"].mean()
+                c_std = m_chromo_df["ct"].std()              
+            
+            #this selects nts with more than some zscore of depth
+            subz_df = m_chromo_df.loc[(m_chromo_df["ct"] >= (c_median + 3*c_std))]
+            suby_df = m_chromo_df.loc[m_chromo_df["ct"] >= (c_median + c_std)]
             
             build_trace(subz_df, suby_df, each_type, c_median, g_median)
             
+            # this detects deletions in the DNA depth, independant of discordance
             if each_type == 'RD':
-                subz_df = m_chromo_df.loc[(mpileup_df["ct"] <= (c_median - 3*c_std))]
-                subz_df = m_chromo_df.loc[(mpileup_df["ct"]) == 0]
-                suby_df = m_chromo_df.loc[mpileup_df["ct"] <= (c_median - c_std)]
-                suby_df = m_chromo_df.loc[(mpileup_df["ct"]) == 0]
+                subz_df = m_chromo_df.loc[(m_chromo_df["ct"]) == 0]
+                suby_df = m_chromo_df.loc[(m_chromo_df["ct"]) == 0]
                 
                 build_trace(subz_df, suby_df, each_type, c_median, g_median)
-    
+                                
         depth_gff_outfile.close()
         chromo_gff_outfile.close()
         
         depth_pickle_name = ('{}/peaks_{}_{}.p').format(pickles_dir, each_sample, each_type)         
         with open(depth_pickle_name, 'wb') as file:
             pickle.dump(depth_dict, file)
+            
+def calculate_over_frame(start, stop, chromo, df):
+    mge_nt_list = []
+    
+    for each in range(start,stop +1):
+        mge_nt_list.append(each)
+    
+    chromo_df = df.loc[df["chromo"] == chromo]
+    mge_df = chromo_df.query('nuc in @mge_nt_list')
+        
+    return(mge_df) 
+
+def nan_inf_cleaner(val):
+    if np.isnan(val):
+        val = 0
+    
+    if np.isinf(val):
+        val = 0
+        
+    return(val)
+
+def weighted_outlier(df, region):
+    mean, std = df.mean(), df.std()
+    
+    top = df[df >= mean+std]
+    bottom = df[df <= mean-std]
+        
+    if bottom.mean(skipna=True) and bottom.std(skipna=True):
+    #if (sum(bottom) > 1):
+        diff = ( (top.mean(skipna=True) - top.std(skipna=True)) - (bottom.mean(skipna=True) + bottom.std(skipna=True)) )
+        rel_outlier = (len(top)+len(bottom))/max(len(df),1)
+        wo = nan_inf_cleaner( rel_outlier * diff)
+        
+        
+    else:
+        diff = ((top.mean(skipna=True) - top.std(skipna=True)))
+        rel_outlier = (len(top))/max(len(df),1)
+        wo = nan_inf_cleaner(rel_outlier * diff)    
+   
+    return(wo)
+
+
+def tea_stats(df_num, df_den, region):
+    num_cov = nan_inf_cleaner(stats.variation(np.array(df_num)))
+    
+    num_sum = df_num.sum()
+    
+    num_wo = weighted_outlier(df_num, region)
+    
+    num_diff = max(df_num)-min(df_num)
+    num_entropy = nan_inf_cleaner(stats.entropy(np.array(df_num)))
+    
+    den_cov = nan_inf_cleaner(stats.variation(np.array(df_den)))
+    
+    den_sum = df_den.sum()
+    
+    den_wo = weighted_outlier(df_den, region)
+    
+    den_diff = max(df_den)-min(df_den)
+    den_entropy = nan_inf_cleaner(stats.entropy(np.array(df_den)))
+    
+    cov = num_cov/max(den_cov,1)
+    rsum = num_sum/max(den_sum,1)
+    wo = num_wo/max(den_wo,1)
+    diff = num_diff/max(den_diff,1)
+    entropy = num_entropy/max(den_entropy,1)
+        
+    return(cov, rsum, wo, diff, entropy)
+
+def tea_features(region, chromo, rd_mpileup_df, runmode):
+    
+    temp_dict = {}
+    
+    if runmode == 'rd':
+        adjust = 300
+        length = max(region) - min(region) + 2*adjust
+        
+        left_outside_start = min(region)-int(adjust)
+        left_outside_stop = min(region)
+        
+        inside_start = min(region)  
+        inside_stop = max(region)
+        
+        right_outside_start = max(region)  
+        right_outside_stop = max(region)+int(adjust)
+        
+        left_outside = calculate_over_frame(left_outside_start, left_outside_stop, chromo, rd_mpileup_df)
+        inside = calculate_over_frame(inside_start, inside_stop, chromo, rd_mpileup_df)
+        
+        left_cov, left_sum, left_wo, left_diff, left_entropy = tea_stats(inside['ct'], left_outside['ct'], region)
+    
+        right_outside = calculate_over_frame(right_outside_start, right_outside_stop, chromo, rd_mpileup_df)
+        #right_inside = calculate_over_frame(right_inside_start, right_inside_stop, chromo, rd_mpileup_df)
+        
+        right_cov, right_sum, right_wo, right_diff, right_entropy = tea_stats(inside['ct'], right_outside['ct'], region)
+        
+        df_cov = (left_cov + right_cov)/length
+        df_sum = (left_sum + right_sum)/length
+        df_wo = (left_wo + right_wo)/length
+        df_diff = (left_diff + right_diff)/length
+        df_entropy = (left_entropy + right_entropy)/length
+    
+    if runmode == 'disco':
+        adjust = 300
+        
+        left_outside_start = min(region)-int(adjust)
+        left_outside_stop = min(region)-75
+        left_inside_start = min(region)-75  
+        left_inside_stop = min(region)+int(adjust)
+        
+        right_inside_start = max(region)-int(adjust)
+        right_inside_stop = max(region)+75
+        right_outside_start = max(region)+75  
+        right_outside_stop = max(region)+int(adjust)
+    
+        left_outside = calculate_over_frame(left_outside_start, left_outside_stop, chromo, rd_mpileup_df)
+        left_inside = calculate_over_frame(left_inside_start, left_inside_stop, chromo, rd_mpileup_df)
+        
+        left_cov, left_sum, left_wo, left_diff, left_entropy = tea_stats(left_inside['ct'], left_outside['ct'],region)
+    
+        right_outside = calculate_over_frame(right_outside_start, right_outside_stop, chromo, rd_mpileup_df)
+        right_inside = calculate_over_frame(right_inside_start, right_inside_stop, chromo, rd_mpileup_df)
+        
+        right_cov, right_sum, right_wo, right_diff, right_entropy = tea_stats(right_inside['ct'], right_outside['ct'], region)
+        
+        df_cov = left_cov + right_cov
+        df_sum = left_sum + right_sum
+        df_wo = left_wo + right_wo
+        df_diff = left_diff + right_diff
+        df_entropy = left_entropy + right_entropy
+    
+    temp_dict = {'df_cov': df_cov, 'df_sum': df_sum,
+                 'df_wo': df_wo, 'df_diff': df_diff,
+                 'df_entropy': df_entropy}
+    
+    return(temp_dict)
+            
+def mge_trace_three_frames(mpileup_df, rd_mpileup_df, split_mpileup_df):
+    global mge_region_lookup_dict
+    
+    trace_dict = {}
+    
+    for chromo in chromo_list:
+        if chromo in mge_region_lookup_dict:
+            sub_mg_set = mge_region_lookup_dict[chromo]
+            
+            if chromo not in trace_dict:
+                trace_dict[chromo] = {}
+                            
+            for region in sub_mg_set:            
+                if region in trace_dict[chromo]:
+                    print('Region error: ', region)
+                    1/0
+                    
+                trace_dict[chromo][region] = {}
+                trace_dict[chromo][region] = {'rd': {}, 'disco': {}, 'split':{}}
+                
+                trace_dict[chromo][region]['rd'] = tea_features(region, chromo, rd_mpileup_df, 'rd')
+                trace_dict[chromo][region]['disco'] = tea_features(region, chromo, mpileup_df, 'disco')
+                trace_dict[chromo][region]['split'] = tea_features(region, chromo, split_mpileup_df, 'disco')
+                
+    return(trace_dict)
+
+def populate_confusion_matrix(val, tval, rdict):
+    if val == tval:
+        if tval:
+            rdict['TP']+=1
+        else:
+            rdict['TN']+=1
+    else:
+        if tval:
+            rdict['FN']+=1
+        else:
+            rdict['FP']+=1    
+    return(rdict)
+
+def print_confusion_matrix(name, rdict, read_type, outfile):
+    outline = ('{name}\t{read_type}\tTP:{tp}\tFP:{fp}\tFN:{fn}\tTN:{tn}\n').format(
+        name = name,
+        read_type = read_type,
+        tp = rdict['TP'],
+        fp = rdict['FP'],
+        fn = rdict['FN'],
+        tn = rdict['TN'])
+            
+    outfile.write(outline)
+    #return(outline)
+    
+def calc_value_weight(result_val, result_dict):
+    denom = (result_dict['FP']+result_dict['TP'])
+    #denom = (result_dict['FP']+result_dict['TP']+result_dict['FN'])
+    s_val = int(result_val)*(result_dict['TP']/max(denom,1))
+    return (s_val)
+    
+def norm_value(val_list, total, runmode):
+    
+    if runmode == 'count':
+        total = max(sum(val_list),1)
+        val_list = [x/total for x in val_list]
+    
+        val_median = np.median(val_list)
+        val_std = np.std(val_list)
+        
+        return(val_median, val_std, total)
+    
+    if runmode == 'distribution':
+        val_median = np.median(val_list)
+        val_std = np.std(val_list)
+        
+        return(val_median, val_std)
+    
+    if runmode == 'norm':
+        val = val_list / max(total, 1)
+        
+        return(val)
+    
+def mge_to_model_parser(mge_file_name):
+    value_df_object = {}
+
+    mge_file = open(mge_file_name)
+    
+    for line in mge_file:
+        if line[0] != '#':
+            line = line.strip()
+            sample_name, sample_path = line.split('\t')
+            
+            if sample_name in value_df_object:
+                if sample_path != value_df_object[sample_name]:
+                    print('Error: ensure that sample_name (first column) is unique')
+                    exit()
+                    
+            value_df_object[sample_name] = sample_path
+    
+    mge_file.close()
+    
+    return(value_df_object) 
+    
+    
+def model_pipe(sample, X_train, X_test, y_train, y_test, 
+               preprocess, sampler, classifier, performance_dict, log_file):
+    
+    pipeline = [make_pipeline(preprocess[0], sampler[0], classifier[0])]
+    
+    for model in pipeline:
+        perf_name = ('{}\t{}\t{}\t').format(preprocess[1], sampler[1], classifier[1])
+        print(perf_name)
+        
+        try:
+            toc = time.perf_counter()
+            
+            model.fit(X_train, y_train)
+            y_pred = model.predict(X_test)
+            
+            tic = time.perf_counter()
+            
+            gmean = geometric_mean_score(y_test, y_pred)
+            fval = f1_score(y_test, y_pred)
+            tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
+            time_elapsed = tic-toc
+            
+            outline = ('{strain}\t{perf_name}\t'
+                       '{gmean}\t{fval}\t{tp}\t{fp}\t{fn}\t{tn}\t{time_elapsed}\n').format(
+                           strain=sample, perf_name=perf_name,
+                           gmean=round(gmean,3), fval = round(fval,3),
+                           tp = tp, fp = fp, fn = fn, tn = tn,
+                           time_elapsed = time_elapsed
+                           )
+            #print(outline)
+            log_file.write(outline)
+            
+            if perf_name not in performance_dict:
+                performance_dict[perf_name] = {'gmean':[],'fval':[], 'time_elapsed':[]}
+                
+            performance_dict[perf_name]['gmean'].append(gmean)
+            performance_dict[perf_name]['fval'].append(fval)
+            performance_dict[perf_name]['time_elapsed'].append(time_elapsed)
+            
+        except:
+            outline = ('{}Exception occurred applying model\n').format(perf_name)
+            #print(outline)
+            log_file.write(outline)
+            
+    return(performance_dict)
+    
+def calc_final_output_performance_values(perfo, performance_dict):
+    gmean = round(np.median(performance_dict[perfo]['gmean']),3)
+    gstd = round(np.std(performance_dict[perfo]['gmean']),3)
+    fval = round(np.median(performance_dict[perfo]['fval']),3)
+    fstd = round(np.std(performance_dict[perfo]['fval']),3)
+    time_elapsed = round(np.median(performance_dict[perfo]['time_elapsed']),3)
+    
+    score=(gmean-gstd)+(fval-fstd)
+    
+    return(gmean, gstd, fval, fstd, time_elapsed, score)
+
+def meta_selection(sample, X, y, performance_dict, log_file):
+    test_number = 100
+    if args.metaparameters == 'fast':
+        test_number = 10
+    
+    outline = ("Running {sample} for {test_number} runs ...").format(
+        sample=sample, test_number = test_number)
+    
+    print(outline)
+    
+    for test in range(test_number + 1):
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, stratify=y)
+        
+        wval = len(y_train[y_train["onehot"]>0])/len(y_train)
+                                     
+        weights = {0:wval, 1:1.0}
+        
+        if args.metaparameters == 'fast':
+            for preprocess in [('passthrough','none'),
+                               (MinMaxScaler(),'MinMaxScaler'),
+                               ]:
+            
+                for classifier in [(LogisticRegression(class_weight=weights, max_iter=1000), 'LogisticRegression_lbgfs'),
+                                   (LogisticRegression(solver='liblinear', class_weight=weights, max_iter=1000), 'LogisticRegression_liblinear'),
+                                   ]:
+                    #
+                    for sampler in [('passthrough','none'),
+                                    (FunctionSampler(), 'FunctionSampler'),
+                                    (AllKNN(), 'AllKNN')
+                                    ]:
+                        #
+                        performance_dict = model_pipe(sample, X_train, X_test, y_train, y_test, 
+                                       preprocess, sampler, classifier, performance_dict, log_file)
+        
+        if args.metaparameters == 'robust':
+            for preprocess in [('passthrough','none'),
+                               (MinMaxScaler(),'MinMaxScaler'),
+                               (StandardScaler(), 'StandardScaler'),
+                               (QuantileTransformer(),'QuantileTransformer'),
+                               ]:
+            
+                for classifier in [(KNeighborsClassifier(), 'KNeighborsClassifier'),
+                                   (LogisticRegression(class_weight=weights, max_iter=1000), 'LogisticRegression_lbgfs'),
+                                   (ComplementNB(), 'ComplementNB'),
+                                   ]:
+                    #
+                    for sampler in [('passthrough','none'),
+                                    (FunctionSampler(), 'FunctionSampler'),
+                                    (ADASYN(), 'ADASYN'),
+                                    (AllKNN(), 'AllKNN')
+                                    ]:
+                        #
+                        performance_dict = model_pipe(sample, X_train, X_test, y_train, y_test, 
+                                       preprocess, sampler, classifier, performance_dict, log_file)
+                        
+        if args.metaparameters == 'complete':
+            for preprocess in [('passthrough','none'),
+                               (MinMaxScaler(),'MinMaxScaler'),
+                               (StandardScaler(), 'StandardScaler'),
+                               (Normalizer(), 'Normalizer'),
+                               (PowerTransformer(),'PowerTransformer'),
+                               (QuantileTransformer(),'QuantileTransformer'),
+                               ]:
+            
+                for classifier in [(KNeighborsClassifier(), 'KNeighborsClassifier'),
+                                   (GaussianNB(), 'GaussianNB'),
+                                   (LogisticRegression(class_weight=weights, max_iter=1000), 'LogisticRegression_lbgfs'),
+                                   (LogisticRegression(solver='liblinear', class_weight=weights, max_iter=1000), 'LogisticRegression_liblinear'),
+                                   (ComplementNB(), 'ComplementNB'),
+                                   (RandomForestClassifier(), 'RandomForestClassifier'),
+                                   ]:
+                    #
+                    for sampler in [('passthrough','none'),
+                                    (FunctionSampler(), 'FunctionSampler'),
+                                    (RandomOverSampler(), 'RandomOverSampler'),
+                                    (ADASYN(), 'ADASYN'),
+                                    (SMOTE(), 'SMOTE'), 
+                                    (RandomUnderSampler(), 'RandomUnderSampler'),
+                                    (NearMiss(version=1), 'NearMiss'),
+                                    (AllKNN(), 'AllKNN')
+                                    ]:
+                        #
+                        performance_dict = model_pipe(sample, X_train, X_test, y_train, y_test, 
+                                       preprocess, sampler, classifier, performance_dict, log_file)
+                    
+    return(performance_dict)
+        
+def model_selection(value_df_object):
+        
+    #TODO make into standard temp_dir 
+    log_file_name = ('model_selection_run.log')
+    log_file = open(log_file_name, 'w')
+    
+    header = ('sample\tmodel\tgmean\tfval\tTP\tFP\tFN\tTN\tTime_elapsed\n')
+    log_file.write(header)
+    
+    #TODO remove
+    performance_dict = {}
+    #
+    for sample in value_df_object:
+        
+        inpickle = value_df_object[sample]
+        print(sample, inpickle)
+        value_df = pd.read_pickle(inpickle) 
+                     
+        X = value_df.drop(['onehot'], axis=1)
+        y = value_df[["onehot"]]
+        
+        performance_dict = meta_selection(sample, X, y, performance_dict, log_file)
+        
+    log_file.close()
+
+    results_name = ('model_selection_best.log')
+    results_file = open(results_name, 'w')
+
+    rank_dict = {}
+    score_list = []
+    
+    for perfo in performance_dict:
+        _gmean, _gstd, _fval, _fstd, _time_elapsed, score = calc_final_output_performance_values(perfo, performance_dict)
+        
+        score_list.append(score)
+        
+    percentile_array = np.percentile(np.array(score_list), range(0,101,10))
+    
+    for perfo in performance_dict:
+        gmean, gstd, fval, fstd, time_elapsed, score = calc_final_output_performance_values(perfo, performance_dict)
+        
+        outline = ('{perfo}\tscore: {score}\tgmean: {gmean}\t'
+                   'gmean_std: {gstd}\tf1: {fval}\tf1_std: {fstd}\ttime_elapsed:{time_elapsed}\n').format(
+                       perfo = perfo, score = score, gmean = gmean, gstd = gstd,
+                       fval = fval, fstd = fstd, 
+                       time_elapsed = time_elapsed)
+
+        pct = calc_percentile(round(score, 5), percentile_array)
+        
+        if pct > 90:
+            print(outline)
+            
+        results_file.write(outline)
+            
+        if score not in rank_dict:
+            rank_dict[score] = set()
+            
+        rank_dict[score].add(perfo)
+        
+    results_file.close()
+        
+    rank_list = list(rank_dict.keys())
+    rank_list.sort(reverse=True)
+    
+    if len(rank_dict[rank_list[0]]) > 1:
+        new_rank_dict = {}
+        for perfo in rank_dict[rank_list[0]]:
+            gmean, gstd, fval, fstd, time_elapsed, _score = calc_final_output_performance_values(perfo, performance_dict)
+            score=(gmean-gstd)+(fval-fstd)-time_elapsed
+            
+            if score not in new_rank_dict:
+                new_rank_dict[score] = set()
+                
+            new_rank_dict[score].add(perfo)
+            
+        new_rank_list = list(new_rank_dict.keys())
+        new_rank_list.sort(reverse=True)
+        
+        for perfo in new_rank_dict[new_rank_list[0]]:
+            gmean, gstd, fval, fstd, time_elapsed, _score = calc_final_output_performance_values(perfo, performance_dict)
+            score=(gmean-gstd)+(fval-fstd)-time_elapsed
+        
+            outline = ('Best performer: {perfo}\tscore: {score}\tgmean: {gmean}\t'
+                       'gmean_std: {gstd}\tf1: {fval}\tf1_std: {fstd}\ttime_elapsed: {time_elapsed}\n').format(
+                           perfo = perfo, score = score, gmean = gmean, gstd = gstd,
+                           fval = fval, fstd = fstd,
+                           time_elapsed = time_elapsed)
+            
+            print(outline)
+        
+    if len(rank_dict[rank_list[0]]) == 1:
+        for perfo in rank_dict[rank_list[0]]:
+            gmean = round(np.median(performance_dict[perfo]['gmean']),3)
+            gstd = round(np.std(performance_dict[perfo]['gmean']),3)
+            fval = round(np.median(performance_dict[perfo]['fval']),3)
+            fstd = round(np.std(performance_dict[perfo]['fval']),3)
+            time_elapsed = round(np.std(performance_dict[perfo]['time_elapsed']),3)
+            
+            score=(gmean-gstd)+(fval-fstd)
+            
+            outline = ('Best performer: {perfo}\tscore: {score}\tgmean: {gmean}\t'
+                       'gmean_std: {gstd}\tf1: {fval}\tf1_std: {fstd}\ttime_elapsed: {time_elapsed}\n').format(
+                           perfo = perfo, score = score, gmean = gmean, gstd = gstd,
+                           fval = fval, fstd = fstd,
+                           time_elapsed = time_elapsed)
+            
+            print(outline)
+            
+def model_train(value_df_object):
+    
+    preprocessor_name = args.preprocessor
+    sampler_name = args.sampler
+    classifier_name = args.classifier
+    
+    master_value_df = pd.DataFrame()
+    
+    for sample in value_df_object:    
+        inpickle = value_df_object[sample]
+        with open(inpickle, 'rb') as fp:
+            value_df = pickle.load(fp) 
+            
+        outline = ('Loading {}...\n Addding {} events...').format(sample, len(value_df))
+        print(outline)
+        
+        master_value_df = pd.concat([master_value_df, value_df], ignore_index=True)
+                     
+    print('Total events evaluated: ', str(len(master_value_df)))
+    #master_value_df
+    X = master_value_df.drop(['onehot'], axis=1)
+    y = master_value_df[["onehot"]]
+        
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, stratify=y)
+    
+    wval = len(y_train[y_train["onehot"]>0])/len(y_train)
+                                 
+    weights = {0:wval, 1:1.0}
+    
+    preprocess_lookup = {'none': 'passthrough',
+                       'MinMaxScaler': MinMaxScaler(),
+                       'StandardScaler': StandardScaler(),
+                       'Normalizer': Normalizer(),
+                       'PowerTransformer': PowerTransformer(),
+                       'QuantileTransformer': QuantileTransformer(),
+                       }
+    
+    classifier_lookup = {'KNeighborsClassifier': KNeighborsClassifier(),
+                         'GaussianNB': GaussianNB(),
+                         'LogisticRegression_lbgfs': LogisticRegression(class_weight=weights, max_iter=1000),
+                         'LogisticRegression_liblinear': LogisticRegression(solver='liblinear', class_weight=weights, max_iter=1000),
+                         'ComplementNB': ComplementNB(),
+                         'RandomForestClassifier': RandomForestClassifier(),
+                        }
+                    #
+    sampler_lookup = {'none':'passthrough',
+                    'FunctionSampler': FunctionSampler(),
+                    'RandomOverSampler': RandomOverSampler(),
+                    'ADASYN': ADASYN(),
+                    'SMOTE': SMOTE(),
+                    'RandomUnderSampler': RandomUnderSampler(),
+                    'NearMiss': NearMiss(version=1),
+                    'AllKNN': AllKNN(),
+                    }
+    
+    if preprocessor_name in preprocess_lookup:
+        preprocess = preprocess_lookup[preprocessor_name]
+    else:
+        print('Error identifying preprocesor.')
+        print('Please specify: ', preprocess_lookup.keys())
+        
+    if sampler_name in sampler_lookup:
+        sampler = sampler_lookup[sampler_name]
+    else:
+        print('Error identifying sampler.')
+        print('Please specify: ', sampler_lookup.keys())
+        
+    if classifier_name in classifier_lookup:
+        classifier = classifier_lookup[classifier_name]
+    else:
+        print('Error identifying classifier.')
+        print('Please specify: ', classifier_lookup.keys())
+        
+    pipeline = [make_pipeline(preprocess, sampler, classifier)]
+    
+    for model in pipeline:
+        perf_name = ('{}\t{}\t{}\t').format(preprocessor_name, sampler_name, classifier_name)
+        print(perf_name)
+        
+        try:
+            toc = time.perf_counter()
+            
+            model.fit(X_train, y_train)
+            y_pred = model.predict(X_test)
+            
+            tic = time.perf_counter()
+            
+            gmean = geometric_mean_score(y_test, y_pred)
+            fval = f1_score(y_test, y_pred)
+            tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
+            time_elapsed = tic-toc
+            
+            outline = ('Top_model:\t{perf_name}\t'
+                       'gmean: {gmean}\tfval: {fval}\tTP: {tp}\tFP: {fp}\tFN: {fn}\tTN: {tn}\ttime_elapsed: {time_elapsed}\n').format(
+                           perf_name=perf_name,
+                           gmean=round(gmean,3), fval = round(fval,3),
+                           tp = tp, fp = fp, fn = fn, tn = tn,
+                           time_elapsed = time_elapsed
+                           )
+            print(outline)
+            
+            pickle_out = ("{}").format(args.model_object)
+            print('Model saved to: ', pickle_out)
+            pickle.dump(model, open(pickle_out, 'wb'))
+            
+            return(True)
+            
+        except:
+            outline = ('{} Exception occurred applying model\n').format(perf_name)
+            1/0
+            
+    return(False)
+
+
+def model_predict(value_df_object):
+    
+    model_name = args.model_object
+    with open(model_name, 'rb') as fp:
+        model = pickle.load(fp)
+     
+    master_value_df = pd.DataFrame()
+    for sample in value_df_object:    
+        inpickle = value_df_object[sample]
+        
+        with open(inpickle, 'rb') as fp:
+            master_value_df = pickle.load(fp)
+          
+        try:
+            outfile_name = ('{}/{}_predicted_mge.gff').format(args.output_file, sample) 
+            outfile = open(outfile_name, 'w')
+                
+            outline = ('Loading {}...\n with {} events...').format(sample, len(master_value_df))
+            print(outline)
+            
+            print('Total events evaluated: ', str(len(master_value_df)))
+            
+            X = master_value_df.drop(['onehot'], axis=1)
+            y_pred = model.predict(X)
+            
+            y_pred_prob = model.predict_proba(X)[:,1]
+            
+            master_value_df['predict'] = y_pred
+            master_value_df['confidence'] = y_pred_prob
+            
+
+            
+            master_value_df.to_csv('C:/Gresham/tiny_projects/tiny_erisapfel/temp/predicted.csv')
+            
+            for index, row in master_value_df.iterrows():
+                chromo, regions = index.split(':')
+                start, stop = regions.split('-')
+                name = index
+                
+                process = False
+                
+                if args.return_all:
+                    process = True
+                else:
+                    if (row['predict'] == 1) or (row['onehot'] == 1):
+                        process = True
+                        
+                if process:                
+                    outline = ('{chromo}\tmge\tmge_prediction\t{start}\t{stop}\t{predict}'
+                               '\t.\t.\t{name}; score={score}; predict={predict};'
+                               'confidence={confidence}; exp={onehot}\n').format(
+                                   chromo = chromo,
+                                   start = start, stop = stop,
+                                   predict = row['predict'], name = name, 
+                                   score = row['total_score'], confidence = row['confidence'],
+                                   onehot = row['onehot'])
+                    
+                    print(outline)
+                    outfile.write(outline)
+                
+            outfile.close()
+            
+        except:
+            outline = ('Error occurred applying model to sample {}\n').format(sample)
+            print(outline)
+            1/0
+                    
+def calculate_score(value_df):
+        
+    #calc score
+    value_df['total_score'] = (value_df.sum(axis=1) - (value_df['length'] - value_df['onehot']))
+    
+    for col_name in value_df.columns:        
+        if col_name not in ['length', 'onehot']:
+            
+            new_evl_name = col_name + '_eval'
+            new_zsc_name = col_name + '_zscore'
+            new_pval_name = col_name + '_zscore_pval'
+            g_median = value_df[col_name].mean()
+            g_std = value_df[col_name].std()
+            
+            eval_case = (value_df[col_name] > (g_median + g_std))
+            zscore = (value_df[col_name] - g_median) / max(g_std, 1)
+            
+            value_df[new_evl_name] = eval_case
+            value_df[new_zsc_name] = zscore
+            value_df[new_pval_name] = stats.norm.sf(abs(zscore))
+    
+    return(value_df)
+
+    
+def value_log_file(sample, trace_dict, defined_dict, region_to_feature_dict):
+    ##TODO change values    
+    pickle_out = ("{}/{}_trace_dict.p").format(pickles_dir, sample)
+    print(pickle_out)
+    pickle.dump(trace_dict, open(pickle_out, 'wb'))
+        
+    pickle_out = ("{}/{}_defined_dict.p").format(pickles_dir, sample)
+    print(pickle_out)
+    pickle.dump(defined_dict, open(pickle_out, 'wb'))
+    
+    pickle_out = ("{}/{}_region_to_feature_dict.p").format(pickles_dir, sample)
+    print(pickle_out)
+    pickle.dump(region_to_feature_dict, open(pickle_out, 'wb')) 
+    
+    value_dict = {}
+    
+    uid_list = []
+    abs_list = []
+    for chromo in trace_dict:
+        for region in trace_dict[chromo]:
+            uid = ('{}:{}-{}').format(chromo, min(region), max(region))
+            uid_list.append(uid)
+            
+            if region in region_to_feature_dict[chromo]:
+                value_dict[uid] = region_to_feature_dict[chromo][region]
+                
+                for read_type in ['rd', 'disco', 'split']:
+                    for feature in trace_dict[chromo][region][read_type].keys():
+                        feature_name = ('{}_{}').format(read_type, feature)
+                        value_dict[uid][feature_name] = trace_dict[chromo][region][read_type][feature]
+                #print(value_dict[uid])
+                
+                if True:
+                # TODO uncomment
+                #if args.known_mge:
+                    if region in defined_dict[chromo]:
+                        value_dict[uid]['onehot'] = int(defined_dict[chromo][region])
+                    else:
+                        print('missing target value: ', chromo, region)
+                else:
+                    target_value = 'unknown'
+                
+            else:
+                abs_list.append([chromo, region])
+                
+    value_df = pd.DataFrame.from_dict(value_dict, orient='index')
+    
+    value_df = value_df.fillna(0)
+    
+    value_df = calculate_score(value_df)
+    outfile_name = ('{}/{}_tea_edge_values.tab').format(final_output_dir, sample)
+    value_df.to_csv(outfile_name)
+    
+    pickle_out = ('{}/{}_tea_values.p').format(final_output_dir, sample)
+    print(pickle_out)
+    pickle.dump(value_df, open(pickle_out, 'wb')) 
+    
+    return(value_df)
+
+def calc_percentile(score, percentile_array):
+    index = 0
+    for pct in percentile_array:
+        
+        if score < pct:
+            return(index)
+        
+        index+=10
+    return(index)
+
+def anchor_properties(anchor_dict):
+    temp_dict = {}
+    
+    return_line = 'anchors;'
+    
+    for num in anchor_dict:
+        (locus, ct) = anchor_dict[num]
+        if ct not in temp_dict:
+            temp_dict[ct] = set()
+        
+        temp_dict[ct].add(locus)
+        
+    total = sum(temp_dict.keys())
+    
+    slist = sorted(temp_dict.keys())
+    
+    for ct in slist:
+        for locus in temp_dict[ct]:
+            outline = ('name={}, pct={}, ct={};').format(locus, 
+            round(100*ct/total), 
+            ct)
+            return_line += outline
+            
+    return(return_line[:-1], temp_dict)               
+            
+
+def make_mge_gff(scored_uid_df, feature_dict):
+    scored_uid_dict = scored_uid_df.to_dict(orient='index')
+    
+    global mge_region_to_name_dict
+
+    outfile_name = ('{}/{}_candidate_TEa.gff').format(final_output_dir, each_sample)
+    outfile = open(outfile_name, 'w')
+    
+    # pre_percentile_array = []
+    
+    # for uid in scored_uid_dict:
+    #     for region in scored_uid_dict[chromo]:
+    #         pre_percentile_array.append(scored_uid_dict[chromo][region])
+            
+    percentile_array = np.percentile(np.array(scored_uid_df['total_score_zscore']), range(0,101,10))
+           
+    for uid in scored_uid_dict:
+        chromo, regions = uid.split(':')
+        start = int(regions.split('-')[0])
+        stop = int(regions.split('-')[1])
+        
+        region = (start, stop)
+
+        mge_name = mge_region_to_name_dict[chromo][region]
+        
+        if mge_name in feature_dict:
+            anchor_line, anchor_dict = anchor_properties(feature_dict[mge_name]['anchors'])
+        else:
+            anchor_line, anchor_dict = 'no_significant_anchors', {}
+            
+        score = scored_uid_dict[uid]['total_score_zscore']
+        pval = scored_uid_dict[uid]['total_score_zscore_pval']
+        
+        pct = calc_percentile(score, percentile_array)
+        
+        #chrXVI	ps_sgd	ltr	62389	62720	.	.	.	ID=S000007192_YPLWdelta5
+        outline = ('{chromo}\tmge\tcandidate_TEa\t{start}\t{stop}\t{score}'
+                   '\t.\t.\t{name}; percentile={pct}; zscore_pval={pval}; {anchor_line}\n').format(
+                       chromo = chromo,
+                       start = start, stop = stop,
+                       pct = pct, name = mge_name, score = score,
+                       pval = pval, anchor_line = anchor_line)
+        
+        outfile.write(outline)
+        
+        for ct in anchor_dict:
+            for locus in anchor_dict[ct]:
+                achromo, nts = locus.split(':')
+                astart, astop = nts.split('-')
+                
+                outline = ('{chromo}\tmge\tcandidate_anchor\t{start}\t{stop}\t{ct}'
+                           '\t.\t.\t{name}_{locus}; score={score}; zscore_pval={pval}; percentile={pct}; {anchor_line}\n').format(
+                               chromo = achromo,
+                               start = astart, stop = astop,
+                               ct = ct, pct = pct, name = mge_name, 
+                               locus = locus, score = score,
+                               pval = pval, anchor_line = anchor_line)
+                
+                outfile.write(outline)
+                
+    outfile.close()
+
+
+def mge_trace_builder(defined_dict, region_to_feature_dict, feature_dict):
+    
+    pickle_name = ('{}/mpileup_{}_RD.p').format(pickles_dir, each_sample)
+    rd_mpileup_df = pickle_loader(pickle_name, 'df')
+    
+    pickle_name = ('{}/mpileup_{}_discordant.p').format(pickles_dir, each_sample)
+    discordant_mpileup_df = pickle_loader(pickle_name, 'df')  
+    
+    pickle_name = ('{}/mpileup_{}_split.p').format(pickles_dir, each_sample)
+    split_mpileup_df = pickle_loader(pickle_name, 'df')  
+              
+    trace_dict = mge_trace_three_frames(discordant_mpileup_df, rd_mpileup_df, split_mpileup_df)
+    
+    scored_uid_df = value_log_file(each_sample, trace_dict, defined_dict, region_to_feature_dict)
+                
+    make_mge_gff(scored_uid_df, feature_dict)
+
+def count_uids_in_region(start, stop, nt_dict):
+    uid_set = set()
+    
+    for nt in range(start, stop + 1):
+        if nt in nt_dict:
+            for uid in nt_dict[nt]:
+                uid_set.add(uid)
+                
+    return(len(uid_set))
+
+def mge_combine_regions(nt_deets):
+    start, stop = min(nt_deets), max(nt_deets) 
+    
+    #region_set collects paired start, stops (tuple)
+    region_set = set()
+    #covered_set records which nts have already been assigned
+    covered_set = set()
+    
+    # region_start should always be the min(nt_deets) not in covered_set
+    for start_nt in range(start, stop + 1):        
+        if (start_nt not in covered_set) and (start_nt in nt_deets):
+
+            region_start = start_nt
+            region_stop = start_nt
+            
+            gap_ct = 0
+            
+            for scan_nt in range(region_start, stop + 1):
+                
+                if gap_ct < gap:
+                    if (scan_nt not in covered_set):
+                        covered_set.add(scan_nt)
+                        
+                    if scan_nt in nt_deets:
+                        region_stop = scan_nt
+                        gap_ct = 0
+                
+                gap_ct += 1
+                
+            region_set.add((region_start, region_stop))
+    
+    return(region_set)
+
+def build_edge_read_set(discordant_sam_file, split_sam_file):
+    global mge_nt_lookup_dict, mge_name_to_region_dict
+    
+    feature_dict = {}
+    selected_uid_dict = {}
+    
+    for runmode in ['discordant', 'split']:        
+        if runmode == 'discordant':
+            print('Parsing discordant reads...')
+            read_file_name = discordant_sam_file        
+            
+        if runmode == 'split':
+            print('Parsing split reads...')
+            read_file_name = split_sam_file
+            
+        read_file = open(read_file_name)
+
+        for line in read_file:
+            line = line.strip()
+            
+            if line[0]!='@':                
+                uid = line.split('\t')[0]
+                chromo = line.split('\t')[2]
+                
+                if chromo in mge_nt_lookup_dict:
+                    start = int(line.split('\t')[3])
+                    mapq = int(line.split('\t')[4])
+                    
+                    if mapq >= mapq_val:
+                        cigar = line.split('\t')[5]
+                        
+                        try:
+                            stop = start + parse_cigar(cigar, 'last_match')
+                        except:
+                            print('parse_cigar error')
+                            print(start, cigar, parse_cigar(cigar, 'last_match'))
+                            1/0
+    
+                        for nt in range(start, stop + 1):
+                            if nt in mge_nt_lookup_dict[chromo]: 
+                                mge_name_set = mge_nt_lookup_dict[chromo][nt]
+                                                                
+                                for mge_name in mge_name_set:                                    
+                                    if mge_name not in feature_dict:
+                                        feature_dict[mge_name] = {
+                                            'chromo' : chromo,
+                                            'mge_region': set(), 
+                                            'anchor_loci': {},
+                                            'uid': set(),
+                                            'mge_mapq':[],
+                                            'anchors': {},
+                                            'anchor_mapq':[]}
+                                        
+                                    feature_dict[mge_name]['mge_region'] = mge_name_to_region_dict[mge_name]
+                                    feature_dict[mge_name]['uid'].add(uid)
+                                    feature_dict[mge_name]['mge_mapq'].append(mapq)
+                                    
+                                    
+                                    if uid not in selected_uid_dict:
+                                        selected_uid_dict[uid] = set()
+                                    
+                                    selected_uid_dict[uid].add(mge_name)
+                                                                                    
+        read_file.close()
+        
+        print('Reparsing ', read_file_name)
+        
+        read_file = open(read_file_name)
+
+        for line in read_file:
+            line = line.strip()
+            
+            if line[0]!='@':                
+                uid = line.split('\t')[0]
+                
+                if uid in selected_uid_dict:
+                    chromo = line.split('\t')[2]
+                    start = int(line.split('\t')[3])
+                    mapq = int(line.split('\t')[4])
+                    cigar = line.split('\t')[5]
+                                        
+                    #filter by qscore should suppress non-unique mapping
+                    if mapq >= mapq_val:
+                        try:
+                            stop = start + parse_cigar(cigar, 'last_match')
+                        except:
+                            print('parse_cigar error')
+                            print(start, cigar, parse_cigar(cigar, 'last_match'))
+                            1/0
+                            
+                        for mge_name in selected_uid_dict[uid]:
+                            mge_chromo = feature_dict[mge_name]['chromo']
+                            mge_region = feature_dict[mge_name]['mge_region']
+                                                    
+                            #edge case to make sure we aren't counting those reads that self map.
+                            process = True
+                            if chromo == mge_chromo:
+                                for nt in range((start - gap), (stop + gap +1)):
+                                    if nt in range(min(mge_region), max(mge_region)):
+                                        process = False                           
+                            
+                            if process:
+                                feature_dict[mge_name]['anchor_mapq'].append(mapq)
+                                
+                                if chromo not in feature_dict[mge_name]['anchor_loci']:
+                                    feature_dict[mge_name]['anchor_loci'][chromo] = {}
+                                    
+                                for nt in range(start, stop + 1):
+                                    if nt not in feature_dict[mge_name]['anchor_loci'][chromo]:
+                                        feature_dict[mge_name]['anchor_loci'][chromo][nt] = set()
+                                        
+                                    feature_dict[mge_name]['anchor_loci'][chromo][nt].add(uid)
+                                        
+    print('Associating reads ... ')
+                            
+    for mge_name in feature_dict:
+        for chromo in feature_dict[mge_name]['anchor_loci']:
+            nt_deets = feature_dict[mge_name]['anchor_loci'][chromo]
+            
+            if min(nt_deets) + gap >= max(nt_deets):
+                num = len(feature_dict[mge_name]['anchors'])
+                locus = ('{}:{}-{}').format(chromo, min(nt_deets), max(nt_deets))
+                ct = count_uids_in_region(min(nt_deets), 
+                                          max(nt_deets), 
+                                          feature_dict[mge_name]['anchor_loci'][chromo])
+                feature_dict[mge_name]['anchors'][num] = (locus, ct)                
+            else:
+                region_set = mge_combine_regions(nt_deets)
+                
+                for region in region_set:
+                    num = len(feature_dict[mge_name]['anchors'])
+                    locus = ('{}:{}-{}').format(chromo, min(region), max(region))
+                    ct = count_uids_in_region(min(nt_deets), 
+                                          max(nt_deets), 
+                                          feature_dict[mge_name]['anchor_loci'][chromo])
+                
+                feature_dict[mge_name]['anchors'][num] = (locus, ct)
+                
+    region_to_feature_dict = {}
+    
+    for mge_name in feature_dict:
+        chromo = feature_dict[mge_name]['chromo']
+        mge_region = feature_dict[mge_name]['mge_region']
+
+        median_mge_mapq = np.median(feature_dict[mge_name]['mge_mapq'])        
+        mean_mge_mapq = np.mean(feature_dict[mge_name]['mge_mapq'])
+        std_mge_mapq = np.std(feature_dict[mge_name]['mge_mapq'])
+
+        median_anchor_mapq = np.median(feature_dict[mge_name]['anchor_mapq'])
+        mean_anchor_mapq = np.mean(feature_dict[mge_name]['anchor_mapq'])
+        std_anchor_mapq = np.std(feature_dict[mge_name]['anchor_mapq'])
+        
+        if chromo not in region_to_feature_dict:
+            region_to_feature_dict[chromo] = {}
+            
+        if mge_region not in region_to_feature_dict[chromo]:
+            region_to_feature_dict[chromo][mge_region] = {'rel_anchor':0,
+                                                          'ttl_anchor':0,
+                                                          'mge':0}
+        read_ct = 0
+        max_read_ct = 0
+        for num in feature_dict[mge_name]['anchors']:
+            num_reads = feature_dict[mge_name]['anchors'][num][1]
+            read_ct += num_reads
+            
+            if num_reads > max_read_ct:
+                max_read_ct = num_reads
+                
+        region = feature_dict[mge_name]['mge_region']
+        length = max(max(region) - min(region),1)
+        
+        region_to_feature_dict[chromo][mge_region]['median_mge_mapq'] = median_mge_mapq
+        region_to_feature_dict[chromo][mge_region]['mean_mge_mapq'] = mean_mge_mapq
+        region_to_feature_dict[chromo][mge_region]['std_mge_mapq'] = std_mge_mapq
+        region_to_feature_dict[chromo][mge_region]['median_anchor_mapq'] = median_anchor_mapq
+        region_to_feature_dict[chromo][mge_region]['mean_anchor_mapq'] = mean_anchor_mapq
+        region_to_feature_dict[chromo][mge_region]['std_anchor_mapq'] = std_anchor_mapq
+        region_to_feature_dict[chromo][mge_region]['length'] = length
+        region_to_feature_dict[chromo][mge_region]['rel_anchor'] = (max_read_ct**2) / (max(read_ct,1) * length)
+        region_to_feature_dict[chromo][mge_region]['rel_ttl_anchor'] = read_ct/length
+        region_to_feature_dict[chromo][mge_region]['rel_mge'] = len(feature_dict[mge_name]['uid'])/length
+        region_to_feature_dict[chromo][mge_region]['anchor'] = (max_read_ct**2) / (max(read_ct,1))
+        region_to_feature_dict[chromo][mge_region]['ttl_anchor'] = read_ct
+        region_to_feature_dict[chromo][mge_region]['mge'] = len(feature_dict[mge_name]['uid'])
+
+
+            
+    return(feature_dict, region_to_feature_dict)
+                        
+""" Step Three """
+if args.mge_file:
+    """
+    Peak detector
+    1. load 'mpileup' files into dataframe pickles.    additional feature, filter regions of chromosome with large deletions
+        
+    """
+    resource_dict = io_load()
+    read_type_list = resource_dict['read_types']
+    discordant_sam_file = resource_dict['discordant_sam_file']
+    split_sam_file = resource_dict['split_sam_file']
+        
+    each_sample = resource_dict['run_name']
+    
+    chromo_size_p = pickle_loader(resource_dict['chromo_size'], 'dict')
+    
+    chromo_list = []
+    for chromo in chromo_size_p:
+        chromo_list.append(chromo)     
+        
+    if args.CNV_min_length:
+        min_length = int(args.CNV_min_length)
+    else:
+        min_length = 300
+        
+    if args.max_gap:
+        gap = int(args.max_gap)
+    else:
+        gap = 300
+                        
+    file_name_lookup = []
+    depth_dict = {}
+    
+    defined_dict = {}
+    
+    if args.known_mge:
+        infile = open(args.known_mge)
+        
+        for line in infile:
+            #{chromo}\tmugio\tcandidate_TE\t'
+            #               '{start}\t{stop}\t{tea}\t.\t.\t'
+            #               'ID={name}; score={score}; TEa={tea}; is uid={is_uid}
+            
+            line = line.strip()
+            chromo, _a, _b, start, stop, tea, _sign, _dot, deets = line.split('\t')
+            
+            tea = bool(int(tea))
+            
+            region = (int(start), int(stop))
+            
+            if chromo not in defined_dict:
+                defined_dict[chromo] = {}
+                
+            if region not in defined_dict[chromo]:
+                defined_dict[chromo][region] = tea
+                
+            else:
+                if defined_dict[chromo][region] == False:
+                    defined_dict[chromo][region] = tea
+    
+    feature_dict, region_to_feature_dict = build_edge_read_set(discordant_sam_file, split_sam_file)
+            
+    mge_trace_builder(defined_dict, region_to_feature_dict, feature_dict)
+
+        
         
 """ Step Four"""
 if args.map_reads:
@@ -1334,7 +3617,7 @@ if args.map_reads:
     
     discordant_sam_file = resource_dict['discordant_sam_file']
     split_sam_file = resource_dict['split_sam_file']
-    soft_sam_file = resource_dict['soft_sam_file']
+    #soft_sam_file = resource_dict['soft_sam_file']
     
     read_type_list = resource_dict['read_types']
     read_type_list.remove('RD')
@@ -1343,11 +3626,26 @@ if args.map_reads:
         chromo_size_dict = pickle.load(fp)
     
     score = (resource_dict['split_zscore_median'] + resource_dict['split_zscore_std']) * sw
-    print('Using split z-score: ' + str(score))
+    outline = ('Using split z-score: {score}\nSplit median: {median}\t'
+               'Split standard deviation: {std}\nSplit weight {weight}').format(
+        score = score, 
+        median = resource_dict['split_zscore_median'],
+        std = resource_dict['split_zscore_std'],
+        weight = sw)
+                   
+    print(outline)
                 
     if 'discordant_zscore_median' in resource_dict:
         disco_score = (resource_dict['discordant_zscore_median'] + resource_dict['discordant_zscore_std']) * dw
-        print('Using disco z-score: ' + str(disco_score))
+        
+        outline = ('Using discordant z-score: {score}\nDisco median: {median}\t'
+                   'Disco standard deviation: {std}\nDisco weight {weight}').format(
+            score = disco_score, 
+            median = resource_dict['discordant_zscore_median'],
+            std = resource_dict['discordant_zscore_std'],
+            weight = dw)
+                       
+        print(outline)
     
     #initialize variables
     fastq_1_list = []
@@ -1360,22 +3658,15 @@ if args.map_reads:
     uniuid_to_phred_dict = {}
     ct = 0
 
-    filter_by_peaks = True
-
     alignment_map = {}
     hypothesis_map = {}
     chromo_map = {}
-
+    
     if not args.min_coverage:
         min_coverage = 3
     else:
         min_coverage = float(args.min_coverage)
-        
-    if args.mapq_val:
-        mapq_val = int(args.mapq_val)
-    else:
-        mapq_val = 30
-                    
+                            
     def correct_size(chromo, start, stop, chromo_size_dict):
         #This function adds a correction factor (flanking) when possible
         correction = int(flank_nt)
@@ -1419,7 +3710,6 @@ if args.map_reads:
         print(chromo, start, stop)
         
         1/0
-        #return(-1)
             
     def filter_regions(chromo, start, stop, region_filter_dict, ancestor_filter):
         process_brks = True
@@ -1478,7 +3768,7 @@ if args.map_reads:
             else:
                 stop = chromo_length
             
-            #section handle loding range dictionary
+            #section handles loading range dictionary
             if chromo in peaks_dict:
                 loci_set = peaks_dict[chromo]
                 
@@ -1503,7 +3793,7 @@ if args.map_reads:
         chromo, start, stop, qscore, cigar, instance = uid_align
         uni_uid_instance = ('{}~{}').format(uni_uid, instance)
                                         
-        if args.load_filter:
+        if args.filter_object:
             process_brks, ancestor_filter = filter_regions(chromo, start, stop, region_filter_dict, ancestor_filter)
 
         if process_brks:
@@ -1524,7 +3814,6 @@ if args.map_reads:
         return(alignment_map, hypothesis_map, ancestor_filter)
     
     def refine_alignment(uni_uid, alignments, alignment_map, runmode, locus_to_hypo_lookup, refined_map):
-        #print(runmode)
         q_uid = ('{}_{}').format(runmode, uni_uid)
         
         if runmode == 'discordant':
@@ -1537,7 +3826,7 @@ if args.map_reads:
                                 
                 hypo_id_list.sort()
                 breakpoint_hypothesis = ('{}_{}').format(hypo_id_list[0],hypo_id_list[1])
-                
+                                
                 if breakpoint_hypothesis in refined_map:
                     refined_map[breakpoint_hypothesis] += [q_uid]
                 else:
@@ -1569,49 +3858,22 @@ if args.map_reads:
                                 refined_map[breakpoint_hypothesis] += [q_uid]
                             else:
                                 refined_map[breakpoint_hypothesis] = [q_uid]
-                    
-        if runmode == 'soft':
-            if len(alignments) == 1:
-                chromo, start, stop, qscore, cigar = alignment_map[alignments[0]]
-                hypo_id = (find_hypo(locus_to_hypo_lookup, chromo, start, stop))
-                #
-                breakpoint_hypothesis = ('{hid}_{hid}').format(hid=hypo_id)
-                if breakpoint_hypothesis in refined_map:
-                    refined_map[breakpoint_hypothesis] += [q_uid]
-                else:
-                    refined_map[breakpoint_hypothesis] = [q_uid]
-                
-            else:
-                for each_instance in alignments:
-                    chromo, start, stop, qscore, cigar = alignment_map[each_instance]
-                    hypo_id = find_hypo(locus_to_hypo_lookup, chromo, start, stop)
-                    #
-                    breakpoint_hypothesis = ('{hid}_{hid}').format(hid=hypo_id)
-                    if breakpoint_hypothesis in refined_map:
-                        refined_map[breakpoint_hypothesis] += [q_uid]
-                    else:
-                        refined_map[breakpoint_hypothesis] = [q_uid]
-               
+                                   
         return(refined_map)
                 
     for runmode in read_type_list:        
         if runmode == 'discordant':
             print('Parsing discordant reads...')
             read_file_name = discordant_sam_file        
-            peaks_file_name = ('{}/{}_discordant_depth.gff').format(idx_dir, output_file)
+            peaks_file_name = ('{}/{}_discordant_depth.gff').format(final_output_dir, output_file)
         
         if runmode == 'split':
             print('Parsing split reads...')
             read_file_name = split_sam_file
-            peaks_file_name = ('{}/{}_split_depth.gff').format(idx_dir, output_file)
-            
-        if runmode == 'soft':
-            print('Parsing soft reads...')
-            read_file_name = soft_sam_file
-            peaks_file_name = ('{}/{}_soft_depth.gff').format(idx_dir, output_file)
+            peaks_file_name = ('{}/{}_split_depth.gff').format(final_output_dir, output_file)
         
-        if filter_by_peaks:
-            peaks_dict = load_peaks(peaks_file_name)
+        #filter_by_peaks:
+        peaks_dict = load_peaks(peaks_file_name)
             
         ct = 0
         uni_uid_set = set()
@@ -1621,8 +3883,6 @@ if args.map_reads:
         for line in read_file:
             process = False
             ct+=1
-            #if (ct % 1000 == 0):
-                #print('\t'+str(ct)+' reads processed.')
             
             if line[0]!='@':                
                 uid = line.split('\t')[0]
@@ -1638,23 +3898,15 @@ if args.map_reads:
                     print('parse_cigar error')
                     print(start, cigar, parse_cigar(cigar, 'last_match'))
                     1/0
-
-                if runmode == 'split':
-                    uid = line.split('\t')[0].split('_')[0]
-
+                                    
                 if qscore >= mapq_val:
-                    process = True
-                    
-                    if filter_by_peaks:
-                        process = False
-                        if chromo in peaks_dict:
-                            loci_set = peaks_dict[chromo]
-                            
-                            for nt in range(start,stop):
-                                if nt in loci_set:
-                                    process = True
-                # if not process:
-                #     print('nothing found')
+                    process = False
+                    if chromo in peaks_dict:
+                        loci_set = peaks_dict[chromo]
+                        
+                        for nt in range(start,stop):
+                            if nt in loci_set:
+                                process = True
                     
                 if process:
                     """ here we make the origin of the fastq file explicit, first asking is the reads are paired,
@@ -1687,17 +3939,25 @@ if args.map_reads:
                         
         read_file.close()
         
+        
     for runmode in read_type_list:
         pull_from_rd_1 = set()
         pull_from_rd_2 = set()
         
-        if runmode == 'split' or runmode == 'discordant':
-            #print(uid_source_dict)
-            
+        if runmode == 'split' or runmode == 'discordant':            
             uni_uid_set = uid_source_dict[runmode]
             
             for uni_uid in uni_uid_set:
                 uid = uni_uid.split('.')[0]
+                               
+                if uid.count('_') == 1:
+                    uid = uid.split('_')[0]
+                    
+                if uid.count('_') > 1:
+                    uid = uid.split('_')[0] 
+                    print('uni_uid ... ')
+                    print(uid)
+                    1/0
                 
                 if (uid+'.1' not in uid_deets_dict):
                     pull_from_rd_1.add(uid)
@@ -1707,6 +3967,7 @@ if args.map_reads:
                 if (uid+'.2' not in uid_deets_dict):
                     pull_from_rd_2.add(uid)
                     fastq_2_list.append(uid)
+                
                     
         rd_file = open(sam_file)
         
@@ -1754,12 +4015,10 @@ if args.map_reads:
                             
         rd_file.close() 
         
-    #print(fastq_1_list)
     if len(fastq_1_list) > 0:
         fastq_1_file = open(fastq_1_filename)
         uniuid_to_seq_dict, uniuid_to_phred_dict = parse_fastq(fastq_1_filename, '.1', fastq_1_list, uniuid_to_seq_dict, uniuid_to_phred_dict)
 
-    #print(fastq_2_list)
     if len(fastq_2_list) > 0:
         fastq_2_file = open(fastq_2_filename)
         uniuid_to_seq_dict, uniuid_to_phred_dict = parse_fastq(fastq_2_filename, '.2', fastq_2_list, uniuid_to_seq_dict, uniuid_to_phred_dict)
@@ -1786,10 +4045,7 @@ if args.map_reads:
         
         if runmode == 'discordant':
             print('Running discordant read mode on ' + str(len(uni_uid_set)) + ' reads ...')
-                        
-        if runmode == 'soft':
-            print('Running soft read mode on ' + str(len(uni_uid_set)) + ' reads ...')
-        
+                                
         if runmode == 'split':
             print('Running split read mode on ' + str(len(uni_uid_set)) + ' reads ...')
                         
@@ -1807,6 +4063,7 @@ if args.map_reads:
     print(outline)
        
     print('Defining regions ...')
+    
     """ Here make a chromosome specific set of nucleotides that have an alignment on them."""
     for uni_uid_instance, deets in alignment_map.items():
         chromo, start, stop, qscore, cigar = deets
@@ -1863,14 +4120,11 @@ if args.map_reads:
             else:
                 uids_that_were_filtered.append(uid)
                             
-            #q_uid = ('{}_{}').format(runmode, uid)
-    print(len(uids_that_were_filtered))
-    print(uids_that_were_filtered[:6])
     #define outputs
-    break_tab = ('{}/break_bt.tab').format(idx_dir)
-    break_bed = ('{}/break_bd.bed').format(idx_dir)
-    dbreak_tab = ('{}/dbreak_dbt.tab').format(idx_dir)
-    dbreak_bed = ('{}/dbreak_dbd.bed').format(idx_dir)
+    break_tab = ('{}/break_bt.tab').format(temp_dir)
+    break_bed = ('{}/break_bd.bed').format(temp_dir)
+    dbreak_tab = ('{}/dbreak_dbt.tab').format(temp_dir)
+    dbreak_bed = ('{}/dbreak_dbd.bed').format(temp_dir)
     #
     break_tab_file = open(break_tab,'w')
     break_bed_file = open(break_bed,'w')
@@ -1879,6 +4133,7 @@ if args.map_reads:
     
     refined_ct = 0
     dbreak_ct = 0
+    
     for breakpoint_hypothesis, uid_list in refined_map.items():
         process_brks_1, process_brks_2 = True, True
         
@@ -1888,43 +4143,44 @@ if args.map_reads:
         chromo_l, start_l, stop_l = hypo_to_locus_lookup[hypo_side_left]
         chromo_r, start_r, stop_r = hypo_to_locus_lookup[hypo_side_right]
         
-        if args.load_filter:
+        if args.filter_object:
             process_brks_1, ancestor_filter = filter_regions(chromo_l, start_l, stop_l, region_filter_dict, ancestor_filter)
             process_brks_2, ancestor_filter = filter_regions(chromo_r, start_r, stop_r, region_filter_dict, ancestor_filter)
                 
         if process_brks_1 and process_brks_2:
+            
+            
             if len(uid_list) > 1:
                 split_ct = 0
                 disco_ct = 0
-                soft_ct = 0
+                #soft_ct = 0
                 processed_list = []
                 uid_str = ''
                 
                 temp_uid_dict = {}
 
                 for each in uid_list:
-                    runmode, uid = each.split('_')
-
-                    if uid not in temp_uid_dict:
-                        temp_uid_dict[uid] = [runmode]
+                    if each.count('_') == 1:
+                        runmode, uid = each.split('_')
                         
                     else:
-                        temp_uid_dict[uid] += [runmode]
+                        runmode, uid = each.split('_', 1)
                         
+                    if uid not in temp_uid_dict:
+                        temp_uid_dict[uid] = set()
+                        
+                    temp_uid_dict[uid].add(runmode)
+                                            
                 for uid, runmodes in temp_uid_dict.items():
-                    if len([i for i in runmodes if i == 'split']) > 0:
+                    if 'split' in runmodes:
                         processed_list.append(uid)
                         split_ct += 1
                         uid_str += ('split_{},').format(uid)
                         
-                    if len([i for i in runmodes if i == 'discordant']) > 0 and (uid not in processed_list):
+                    if 'discordant' in runmodes:
                         disco_ct += 1
                         uid_str += ('discordant_{},').format(uid)
-                        
-                    if len([i for i in runmodes if i == 'soft']) > 0 and (uid not in processed_list):
-                        soft_ct += 1
-                        uid_str += ('soft_{},').format(uid)
-                
+                                        
                 uid_str = uid_str.rsplit(',',1)[0]
                 
                 if len(temp_uid_dict) >= 2:                    
@@ -1935,7 +4191,7 @@ if args.map_reads:
                         combined_weight = s_weight
                     else:
                         combined_weight = (d_weight + s_weight)
-                    
+                                            
                     """generate two file sets - one set contains those hypothetical breaks with split read support
                     while the other set only has significant values of discordant reads available"""
         
@@ -1994,94 +4250,6 @@ if args.map_reads:
 """ Step Five """
 if args.make_filter:
     
-    def populate_filter_dict(chromo, start, stop, region):
-        print('pfd',chromo, start, stop, region)
-        print(len(region_name_dict))
-        
-        if chromo not in filter_region_dict:
-            filter_region_dict[chromo]=set()
-    
-        if chromo in filter_region_dict:
-            for index in range(start,stop+1):
-                filter_region_dict[chromo].add(index)  
-    
-        if region in region_name_dict:
-            region_name_dict[region]+=1
-            
-        if region not in region_name_dict:
-            region_name_dict[region]=1 
-    
-    def parse_filter_gff(gff_file):
-        filter_file = open(gff_file)
-        for line in filter_file:
-            if line[0]!='#':
-                region = 'unannotated'
-                if 'ID=' in line:
-                    region = line.split('ID=')[1].split(';')[0].strip()
-                else:
-                    if line.count('\t') > 7:
-                        region = line.split('\t')[8].split(';')[0].strip()
-                    
-                chromo = line.split('\t')[0]
-                start = int(line.split('\t')[3])
-                stop = int(line.split('\t')[4])
-                populate_filter_dict(chromo, start, stop, region)
-                
-        filter_file.close()
-        
-    def parse_tab(tab_file, anc_QC_list):
-        anc_tab = open(tab_file)
-        
-        for line in anc_tab:
-            d_ct = 0
-            s_ct = 0
-            chromo = line.split('\t')[1]
-            start = int(line.split('\t')[2])
-            stop = int(line.split('\t')[3])
-            breakpoint_name = line.split('\t')[0]
-            
-            uid_str = line.split('\t')[8].split(',')
-            s_ct = uid_str.count('split_')
-            d_ct = uid_str.count('discordant_')
-
-            score = (sw*s_ct) + (dw*d_ct)
-            
-            if (s_ct >= 1) and (score >= min_score):
-                anc_QC_list.append(breakpoint_name)
-                populate_filter_dict(chromo, start, stop, breakpoint_name)
-            
-            if (s_ct == 0) and (score >= 3*min_score):
-                anc_QC_list.append(breakpoint_name)
-                populate_filter_dict(chromo, start, stop, breakpoint_name)
-                
-        anc_tab.close()
-        
-        return(anc_QC_list)
-                
-    def parse_bed(bed_file, source):
-        in_bed = open(bed_file)
-        
-        for line in in_bed:
-            chromo = line.split('\t')[0]
-            start = int(line.split('\t')[1])
-            stop = int(line.split('\t')[2])
-            breakpoint_name = line.split('\t')[3] + '_' + source
-            
-            #if breakpoint_name not in anc_QC_list:
-            populate_filter_dict(chromo, start, stop, breakpoint_name)
-        
-        in_bed.close()
-
-    if args.run_name:
-        break_tab = ('{}/break_bt.tab').format(idx_dir)
-        parse_tab(break_tab)
-        break_bed = ('{}/break_bd.bed').format(idx_dir)
-        parse_bed(break_bed)
-        dbreak_tab = ('{}/dbreak_dbt.tab').format(idx_dir)
-        parse_tab(dbreak_tab)
-        dbreak_bed = ('{}/dbreak_dbd.bed').format(idx_dir)
-        parse_bed(dbreak_bed)
-    
     if args.filter_gff:
         if len(args.filter_gff) > 1:
             for each_gff_file in args.filter_gff:
@@ -2127,258 +4295,9 @@ if args.make_filter:
         outline = ('\t{}:\t{}').format(each,ct)
         print(outline)
         
-    pickle_out = ("{}{}").format(output_dir, output_file)
+    pickle_out = ("{}").format(args.filter_object)
     pickle.dump(filter_region_dict, open(pickle_out, 'wb'))
-
-    # pickle_out = ("{}_filter.p").format(pickles_dir)
-    # pickle.dump(filter_region_dict, open(pickle_out, 'wb'))
-
-def check_coverage(source, prefilter_file_name, contig_seq_dict):      
-    process = False
-
-    temp_filter_file = open(prefilter_file_name)
-    
-    for line in temp_filter_file:
-        print(line)
-        if line[0] == '>' and not process:
-            eval_cov = float(line.rsplit('_',1)[1])
-            if eval_cov >= float(min_coverage):
-                    process=True
-                    seq_str=''
-                    node_name = source+'_'+str(int(eval_cov))
-                    
-        if line[0]!= '>' and process:
-            seq_str += line.strip()
-            
-    temp_filter_file.close()
-
-    if len(seq_str)>1:
-        contig_seq_dict[node_name]=seq_str
-        #addend = True
         
-    print('node name '+str(node_name))
-    
-    return(contig_seq_dict)    
-        
-def gff_from_json(json_file_name, contig_seq_dict, gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict):
-    active = False
-    query_deets_dict = {}
-    chromo_dict={}
-    try:
-        data = json.load(open(json_file_name))
-    except:
-        print('json file ' + json_file_name + ' not found')
-        return(gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict)
-
-    for report_index in range(len(data["BlastOutput2"])):
-        data_dict = (data["BlastOutput2"][report_index])
-        for each_report in data_dict.items():
-            for a_key, a_value in enumerate(each_report):
-                if type(a_value)==dict:                   
-                    for b_key, b_value in a_value.items():
-                        if type(b_value)==dict:
-                            for c_key, c_value in b_value.items():
-                                if ('bl2seq' in c_key) and (type(c_value)==list):
-                                    hit_dict = c_value[0]
-                                    
-                                    for d_key, d_value in hit_dict.items():                                        
-                                        q_title = str(hit_dict['query_title'])
-                                          
-                                        if ('hits' in d_key) and (type(d_value)==list) and (len(d_value)>0):
-                                            for each_hits in d_value:
-                                                
-                                                for e_key, e_value in each_hits.items():
-                                                
-                                                    base = q_title + '.'+str(each_hits['num']) 
-                                                    chromo = each_hits['description']
-                                                    chromo = chromo[0]
-                                                    chromo_dict[base] = str(chromo['id'])
-                                                        
-                                                    if (e_key == 'hsps') and (type(e_value)==list):
-                                                        for e_index in range(len(e_value)):
-                                                            each_hsps = e_value[e_index]
-    
-                                                            numb = str(base)+'.'+str(each_hsps['num'])
-                                                            
-                                                            if len(numb)>1:
-                                                                active = True
-                                                                
-                                                                hit_from = int(each_hsps["hit_from"])                                                                
-                                                                hit_to = int(each_hsps["hit_to"])                                                                
-                                                                query_from = str(each_hsps["query_from"])                                                                
-                                                                query_to = str(each_hsps["query_to"])                                                            
-                                                                bit_score = float(each_hsps["bit_score"])
-                                                                evalue_score = float(each_hsps["evalue"])
-                                                                query_strand = str(each_hsps["query_strand"])                                                                
-                                                                hit_strand = str(each_hsps["hit_strand"])                                                                
-                                                                qseq = str(each_hsps["qseq"])                                                            
-                                                                hseq = str(each_hsps["hseq"])
-                                                            
-                                                            if evalue_score > max_eval:
-                                                                active = False
-                                                            
-                                                            if active:
-                                                                active = False
-                                                                query_deets_dict[numb] = ['q_id','hit_from','hit_to','query_from','query_to','bit_score','query_strand','hit_strand','qseq', 'hseq','q_title']
-                                                                query_deets_dict[numb][0] = base
-                                                                query_deets_dict[numb][1] = hit_from
-                                                                query_deets_dict[numb][2] = hit_to
-                                                                query_deets_dict[numb][3] = query_from
-                                                                query_deets_dict[numb][4] = query_to
-                                                                query_deets_dict[numb][5] = bit_score
-                                                                query_deets_dict[numb][6] = query_strand
-                                                                query_deets_dict[numb][7] = hit_strand
-                                                                query_deets_dict[numb][8] = qseq
-                                                                query_deets_dict[numb][9] = hseq
-                                                                query_deets_dict[numb][10] = q_title
-                                                                numb = 0
-
-    ct = 0    
-    for numb, deets in query_deets_dict.items():
-        q_title = query_deets_dict[numb][10]
-                
-        if q_title not in contig_seq_dict:
-            contig_seq = ''
-            print(numb, q_title, contig_seq_dict)
-            1/0
-        else:
-            contig_seq = contig_seq_dict[q_title]
-
-        base = query_deets_dict[numb][0]
-        reduced_base = query_deets_dict[numb][0].rsplit('.', 1)[0]
-        hypo_id = str(reduced_base + '_' + str(ct))
-
-        if reduced_base in gff_uid_dict:
-            gff_uid_dict[reduced_base].add(hypo_id)
-        else:
-            hypo_id_set = set()
-            hypo_id_set.add(hypo_id)
-            gff_uid_dict[reduced_base] = hypo_id_set
-                
-        chromo = chromo_dict[base]
-        
-        hit_from = query_deets_dict[numb][1]
-        hit_to = query_deets_dict[numb][2]
-        
-        q_from = int(query_deets_dict[numb][3])
-        q_to = int(query_deets_dict[numb][4])
-        
-        if hit_from < hit_to:
-            start = hit_from
-            stop = hit_to
-        else:
-            start = hit_to
-            stop = hit_from
-                    
-        if query_deets_dict[numb][7] == 'Plus':
-            sign = '+'
-        else:
-            sign = '-'
-            
-        bit_score = float(query_deets_dict[numb][5])
-        
-        if query_deets_dict[numb][6] != query_deets_dict[numb][7]:
-            orient = 'reverse'
-        else:
-            orient = 'forward'
-            
-        mod_seq = ''
-        qseq = query_deets_dict[numb][8]
-        hseq = query_deets_dict[numb][9]
-        
-        for index in range(len(qseq)):
-            if qseq[index] == hseq[index]:
-                mod_seq += qseq[index].upper()
-            if qseq[index] != hseq[index]:
-                mod_seq += qseq[index].lower()
-        
-        node_loci = ('{},{},{},{}').format(q_title, query_deets_dict[numb][3], query_deets_dict[numb][4], float(query_deets_dict[numb][5]))
-        gff_line = ('{}\terisapfel\t{}_aligned_split\t{}\t{}\t.\t{}\t{}\tnode_uid={}; orient={}; alt_seq={}; ref_seq={}; contig={}\n').format(chromo, hypo_id, start, stop, sign, int(round(bit_score)), node_loci, orient, mod_seq, hseq, contig_seq)
-
-        aligned_region_set = set()
-        
-        #set internal check
-        for each in range(q_from,q_to):
-            aligned_region_set.add(reduced_base + '.' + str(each))
-        
-        #set genome wide check
-        genome_region_set = set()
-        for each in range(start, stop):
-            genome_region_set.add(chromo + '-' + str(each))
-        
-        if hypo_id in blast_read_aligned_sections_dict:
-            blast_read_aligned_sections_dict[hypo_id] += [aligned_region_set]
-        else:
-            blast_read_aligned_sections_dict[hypo_id] = [aligned_region_set]
-        
-        if hypo_id in blast_genome_aligned_regions_dict:
-            blast_genome_aligned_regions_dict[hypo_id] += [genome_region_set]
-        else:
-            blast_genome_aligned_regions_dict[hypo_id] = [genome_region_set]
-            
-        if hypo_id in gff_rank_dict:
-            gff_rank_dict[hypo_id] += [bit_score]
-        else:
-            gff_rank_dict[hypo_id] = [bit_score]
-        
-        if hypo_id in gff_list_dict:
-            gff_list_dict[hypo_id] += [gff_line]
-        else:
-            gff_list_dict[hypo_id] = [gff_line]
-            
-        ct+=1
-
-    return(gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict)    
- 
-def score_uids(hypo_id, gff_line, gff_score_dict, gff_uni_uid_dict):
-    chromo, efield, inline_hypo, start, stop, dot, sign, bit_score, deets = gff_line.split('\t')
-    bit_score = float(bit_score)
-    outline = ('{}:{}-{},{}').format(chromo, start, stop, hypo_id)
-    
-    if outline not in gff_score_dict:
-        gff_score_dict[outline] = bit_score
-        gff_uni_uid_dict[hypo_id] = gff_line
-    else:
-        old_score = gff_score_dict[outline]
-        if old_score < bit_score:
-            gff_score_dict[outline] = bit_score
-            gff_uni_uid_dict[hypo_id] = gff_line
-    
-    return(gff_score_dict, gff_uni_uid_dict)
-    
-def define_alignment(gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict, best_uid_dict):
-    
-    """Remove duplicates gff calls"""
-    gff_score_dict = {}
-    gff_uni_uid_dict = {}
-    
-    for each_hypo, gff_line in gff_list_dict.items():
-        print(each_hypo, gff_line)
-        #TODO - not sure about this hypo_id
-        hypo_id = each_hypo.split('_')[0] + '_' + each_hypo.split('_')[1] + '_' + each_hypo.split('_')[2]
-        print(hypo_id)
-        
-        if len(gff_line) < 2:
-            gff_score_dict, gff_uni_uid_dict = score_uids(hypo_id, gff_line[0], gff_score_dict, gff_uni_uid_dict)
-        else:
-            for each_line in gff_line:
-                gff_score_dict, gff_uni_uid_dict = score_uids(hypo_id, each_line, gff_score_dict, gff_uni_uid_dict)
-    
-    print(len(gff_list_dict))
-    print(len(gff_uni_uid_dict))
-    
-    gff_list = []
-    for each, line in gff_uni_uid_dict.items():
-        gff_list.append(line)       
-    
-    return(gff_list)
-        
-def make_range_set(start, stop):
-    temp_set = set()
-    for each in range((start-overlap_mask),(stop+overlap_mask)):
-        temp_set.add(each)
-    return(temp_set)     
-    
 """ Step Six """
 if args.build_sequence:
     if args.hashsize:
@@ -2399,7 +4318,12 @@ if args.build_sequence:
     if args.cov_cutoff:
         cov_cutoff = args.cov_cutoff
     else:
-        cov_cutoff = 1   
+        cov_cutoff = 1
+        
+    if args.max_gap:
+        gap = int(args.max_gap)
+    else:
+        gap = 5
         
     complete_qname_dict = {}
     qname_lookup_dict = {}
@@ -2421,718 +4345,235 @@ if args.build_sequence:
     
     uniuid_to_seq_dict, uniuid_to_phred_dict = io_load('fq')
         
-    break_tab = ('{}/break_bt.tab').format(idx_dir)   
-    dbreak_tab = ('{}/dbreak_dbt.tab').format(idx_dir)
-            
-    def parse_msa_file(filename):
+    break_tab = ('{}/break_bt.tab').format(temp_dir)   
+    dbreak_tab = ('{}/dbreak_dbt.tab').format(temp_dir)
+                               
+    """parse_brks:
+    This recovers the loci from the hypothesized breakpoints identified in earlier
+    steps.
+    """    
+    print('Starting breakpoint testing...')
+    parse_brks(break_tab)
+
+    # hypothesis_dict stores anchors and othersides by nt
+    hypothesis_dict = {}
+    # each anchor has a single contig, these contigs are collected by nt
+    anchor_contig_dict = {}
+    
+    cluster = 0
+    qname_ct = 0
+    for hypo, qname_list in complete_qname_dict.items():
+        qname_ct +=1
+        if qname_ct % 1 == 0:
+            outline = ('Breakpoint Hypotheses Tested: {} \t Number remaining {} \t Percent Complete {}\n').format(qname_ct, len(complete_qname_dict)-qname_ct, round(qname_ct/float(len(complete_qname_dict)),2))
+            print(outline)
         
-        infile = open(filename)
-        hash_to_name = {}
-        msa_dict = {}
-        seq = ''
+        temp_seq_file_name = ('{}/{}_temp_seq.fa').format(temp_dir, hypo)
+        make_fasta(temp_seq_file_name, hypo, qname_list)
         
-        for line in infile:
-            if line[0] == '>':
-                name = (line.split('>')[1].split('_')[0].strip())
-                hname = str(hash(name))
+        msa_dict, hash_to_name = parse_msa_file(temp_seq_file_name)
+        
+        distance_dict = {}
+        # distance dict represents distance (mismatch) between two sequences
+        for name1, seq1 in msa_dict.items():
+            for name2, seq2 in msa_dict.items():
+                check_compare = ('{}_{}').format(min(name1, name2), max(name1, name2))
                 
-                if seq != '':
-                    msa_dict[hname] = seq
-        
-                hash_to_name[hname] = name
-                
-                seq = ''
-            else:
-                seq += line.strip()
-                
-        #picks up any trailers
-        msa_dict[hname] = seq
-        infile.close()
-        
-        return(msa_dict, hash_to_name)
-        
-    def parse_msa_kmer(seq_1, seq_2):
-        #print('pmk')
-        match_ct = 0
-        mismatch_ct = 0
-        phase = 0
-        for each in range(len(seq_1)):
-            
-            if phase == 0:
-                if ((seq_1[each] != '-') and (seq_2[each] != '-')):
-                    phase = 1
-                
-            if phase == 1:
-                if (len(seq_1[each:]) == seq_1[each:].count('-')) or (len(seq_2[each:]) == seq_2[each:].count('-')):
-                    phase = 2
-                    
-                else: 
-                    if (seq_1[each] != seq_2[each]):
-                        mismatch_ct += 1 
+                if (name1 != name2) and (check_compare not in distance_dict):
+                    if name1 == min(name1, name2):
+                        seqA = seq1
+                        seqB = seq2
                     else:
-                        match_ct += 1
-                             
-        return(mismatch_ct, match_ct)
-        
-    def build_clusters(distance_dict, msa_dict, hash_to_name, contig_seq_dict):
-        cluster = 0
-        name_to_cluster_dict = {}
-        cluster_to_name_dict = {}
-        
-        for compare, deets in distance_dict.items():
-            mismatch, match = deets
-            if ((mismatch <= 1) or ((mismatch/max(1,float(match))) <= 0.04)) and (match >= 25):
-                name1, name2 = compare.split('_')
-                
-                if (name1 in name_to_cluster_dict) and (name2 in name_to_cluster_dict):
-                    name1_cluster_set = name_to_cluster_dict[name1]
-                    for eachc in name1_cluster_set:
-                        name1_list = cluster_to_name_dict[eachc]
-                    
-                        if name2 not in name1_list:
-                            name_to_cluster_dict[name2].union(name1_cluster_set)
-                            cluster_to_name_dict[eachc].append(name2)
+                        seqA = seq2
+                        seqB = seq1
                         
-                    name2_cluster_set = name_to_cluster_dict[name2]
-                    for eachc in name2_cluster_set:
-                        name2_list = cluster_to_name_dict[eachc]
+                    distance_dict[check_compare] = parse_msa_kmer(seqA, seqB)
                     
-                        if name1 not in name2_list:
-                            name_to_cluster_dict[name1].union(name2_cluster_set)
-                            cluster_to_name_dict[eachc].append(name1)
-                
-                if (name1 in name_to_cluster_dict) and (name2 not in name_to_cluster_dict):
-                    temp_cluster_set = name_to_cluster_dict[name1]
-                    name_to_cluster_dict[name2] = temp_cluster_set
-                    for eachc in temp_cluster_set:
-                        cluster_to_name_dict[eachc].append(name2)
-                    
-                if (name1 not in name_to_cluster_dict) and (name2 in name_to_cluster_dict):
-                    temp_cluster_set = name_to_cluster_dict[name2]
-                    name_to_cluster_dict[name1] = temp_cluster_set
-                    for eachc in temp_cluster_set:
-                        cluster_to_name_dict[eachc].append(name1)
-                
-                if (name1 not in name_to_cluster_dict) and (name2 not in name_to_cluster_dict) :
-                    new_cluster = set()
-                    new_cluster.add(cluster)
-                    name_to_cluster_dict[name1] = new_cluster
-                    name_to_cluster_dict[name2] = new_cluster
-                    cluster_to_name_dict[cluster] = [name1, name2]
-                    
-                    cluster+=1
-         
-        prefix_list = []
-        for cluster, hnames in cluster_to_name_dict.items():
-            node_name = ('{hypo}_{cluster}').format(cluster=cluster, hypo=hypo)
-            cluster_seq_name = ('{temp}/{node_name}_cluster_seq.fa').format(node_name=node_name, temp=temp_dir)
-            cluster_seq = open(cluster_seq_name, 'w')
-    
-            if len(hnames) > 1:
-                for hname in hnames:
-                    name = hash_to_name[hname]
-                    seq = msa_dict[hname].replace('-','')
-                    
-                    outline = ('>{}\n{}\n').format(name, seq)
-                    cluster_seq.write(outline)
-                cluster_seq.close()
-                
-                cluster_align_name = ('{temp}/{node_name}_cluster_aligned.msf').format(node_name=node_name, temp=temp_dir)
-                bashCommand = ('module load mafft/intel/7.475\n'
-                               'mafft --auto --adjustdirection --globalpair --quiet {} > {}').format(cluster_seq_name, cluster_align_name)
-                output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-                print(bashCommand)
-                
-                bashCommand = ('module load emboss/intel/6.6.0\n\n\n'
-                               'cons -name {}_{} -plurality 1 {} -outseq {}').format(node_name, len(hnames), cluster_align_name, cluster_seq_name)
-                output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-                print(bashCommand)
-                
-                contig_seq_dict = check_coverage(node_name, cluster_seq_name, contig_seq_dict)
-                
-                prefix = ('{temp}/{node_name}').format(temp=temp_dir, node_name=node_name)
-                prefix_list.append(prefix)
+        prefix_list, contig_seq_dict = build_clusters(distance_dict, msa_dict, hash_to_name, contig_seq_dict)  
 
-        return(prefix_list, contig_seq_dict)
-                
-    parse_this = True
-
-    if parse_this:     
-        """parse_brks:
-        This recovers the loci from the hypothesized breakpoints identified in earlier
-        steps.
-        """    
-        parse_brks(break_tab, 'seq')
-        #parse_brks(dbreak_tab, 'discordant')
-        
-        print('Starting breakpoint testing...')
-        #spades_file_name = ('{}/spades_output/scaffolds.fasta').format(temp_dir)
-        cluster = 0
-        qname_ct = 0
-        for hypo, qname_list in complete_qname_dict.items():
+        for prefix in prefix_list:
+            json_short_file_name = ('{}_short_blastn.json').format(prefix)
+            json_long_file_name = ('{}_long_blastn.json').format(prefix)
+            cluster_seq_name = ('{}_cluster_seq.fa').format(prefix)
             
-            qname_ct +=1
-            if qname_ct % 1 == 0:
-                outline = ('Breakpoint Hypotheses Tested: {} \t Number remaining {} \t Percent Complete {}\n').format(qname_ct, len(complete_qname_dict)-qname_ct, round(qname_ct/float(len(complete_qname_dict)),2))
-                print(outline)
+            seq = get_seq(cluster_seq_name)
             
-            temp_seq_file_name = ('{}/{}_temp_seq.fa').format(temp_dir, hypo)
-            make_fasta(temp_seq_file_name, hypo, qname_list)
-            
-            msa_dict, hash_to_name = parse_msa_file(temp_seq_file_name)
-            
-            distance_dict = {}
-            for name1, seq1 in msa_dict.items():
-                for name2, seq2 in msa_dict.items():
-                    check_compare = ('{}_{}').format(min(name1, name2), max(name1, name2))
-                    
-                    if (name1 != name2) and (check_compare not in distance_dict):
-                        if name1 == min(name1, name2):
-                            seqA = seq1
-                            seqB = seq2
-                        else:
-                            seqA = seq2
-                            seqB = seq1
-                            
-                        distance_dict[check_compare] = parse_msa_kmer(seqA, seqB)
-                        
-            prefix_list, contig_seq_dict = build_clusters(distance_dict, msa_dict, hash_to_name, contig_seq_dict)  
-
-            for prefix in prefix_list:
-                json_short_file_name = ('{}_short_blastn.json').format(prefix)
-                json_long_file_name = ('{}_long_blastn.json').format(prefix)
-                cluster_seq_name = ('{}_cluster_seq.fa').format(prefix)
-                
-                bashCommand = ('module load blast+/2.11.0\n'
-                               'blastn -task "blastn-short" -query {} -subject {fa_file} -outfmt 15 -out {}').format(cluster_seq_name, json_short_file_name, fa_file=fa_file)
-                output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-                gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict = gff_from_json(json_short_file_name, contig_seq_dict, gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict)
-           
-                bashCommand = ('module load blast+/2.11.0\n'
-                               'blastn -query {} -subject {fa_file} -outfmt 15 -out {}').format(cluster_seq_name, json_long_file_name, fa_file=fa_file)
-                output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-                gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict = gff_from_json(json_long_file_name, contig_seq_dict, gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict)
-
-        resource_pickle_name = ('{}/gff_list_dict.p').format(pickles_dir)
-        with open(resource_pickle_name, 'wb') as file:
-            pickle.dump(gff_list_dict, file)
-            
-        resource_pickle_name = ('{}/gff_rank_dict.p').format(pickles_dir)         
-        with open(resource_pickle_name, 'wb') as file:
-            pickle.dump(gff_rank_dict, file)
-            
-        resource_pickle_name = ('{}/blast_read_aligned_sections_dict.p').format(pickles_dir)         
-        with open(resource_pickle_name, 'wb') as file:
-            pickle.dump(blast_read_aligned_sections_dict, file)
-            
-        resource_pickle_name = ('{}/blast_genome_aligned_regions_dict.p').format(pickles_dir)         
-        with open(resource_pickle_name, 'wb') as file:
-            pickle.dump(blast_genome_aligned_regions_dict, file)
-            
-        resource_pickle_name = ('{}/gff_uid_dict.p').format(pickles_dir)         
-        with open(resource_pickle_name, 'wb') as file:
-            pickle.dump(gff_uid_dict, file)
-    
-    pickle_in = ('{}/gff_list_dict.p').format(pickles_dir)
-    gff_list_dict = pickle_loader(pickle_in, 'dict')
-
-    pickle_in = ('{}/gff_rank_dict.p').format(pickles_dir)
-    gff_rank_dict = pickle_loader(pickle_in, 'dict')
-
-    pickle_in = ('{}/blast_read_aligned_sections_dict.p').format(pickles_dir)
-    blast_read_aligned_sections_dict = pickle_loader(pickle_in, 'dict')
-    
-    pickle_in = ('{}/blast_genome_aligned_regions_dict.p').format(pickles_dir)
-    blast_genome_aligned_regions_dict = pickle_loader(pickle_in, 'dict')
-        
-    pickle_in = ('{}/gff_uid_dict.p').format(pickles_dir)
-    gff_uid_dict = pickle_loader(pickle_in, 'dict')
-        
-    print('Protential breakpoints: '+ str(len(gff_uid_dict)))
-    gff_list = define_alignment(gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict, best_uid_dict)
+            bashCommand = ('blastn -task "blastn-short" -query {} -subject {fa_file} -outfmt 15 -out {}').format(cluster_seq_name, json_short_file_name, fa_file=fa_file)
+            subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
+            hypothesis_dict, anchor_contig_dict = parse_json(json_short_file_name, seq, hypothesis_dict, anchor_contig_dict)
+            #gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict = parse_json(json_short_file_name, contig_seq_dict, gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict)
        
-    gff_list = []
-    for each, sets_line in gff_list_dict.items():
-        print('each', each)
-        for each_line in sets_line:
-            print('each_lise', each_line)
-            gff_list.append(each_line)
-    
-    gff_file_name = ('{}/{}_realigned.gff').format(idx_dir, output_file)
+            bashCommand = ('blastn -query {} -subject {fa_file} -outfmt 15 -out {}').format(cluster_seq_name, json_long_file_name, fa_file=fa_file)
+            subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
+            hypothesis_dict, anchor_contig_dict = parse_json(json_long_file_name, seq, hypothesis_dict, anchor_contig_dict)
+            #gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict = parse_json(json_long_file_name, contig_seq_dict, gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict)
+
+    gff_set = summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap)
+
+    resource_pickle_name = ('{}/hypothesis_dict.p').format(pickles_dir)
+    with open(resource_pickle_name, 'wb') as file:
+         pickle.dump(hypothesis_dict, file)
+            
+    gff_file_name = ('{}/{}_realigned.gff').format(final_output_dir, output_file)
     gff_file = open(gff_file_name,'w')    
     
-    for each_gff in gff_list:
+    for each_gff in gff_set:
         gff_file.write(each_gff)
     
     gff_file.close()
-    #reduced_file.close()
             
-    outline = ('\t{} nodes realigned to {} regions.\n\n\tFor a complete representation refer to:\n\t\t{}').format(len(complete_qname_dict), len(gff_list), gff_file_name)
+    outline = ('\t{} nodes realigned to {} regions.\n\n\tFor a complete representation refer to:\n\t\t{}').format(len(complete_qname_dict), len(gff_set), gff_file_name)
     print(outline)
     
-    """ Discordant Analysis 
-    In this section we reprocess the discordant hits to identify topological changes.
-    """
-    #parse_brks(dbreak_tab, 'discordant')
+if args.separate_by_strand:
+    infile_name = args.input_file
+    outfile = args.output_file
     
-""" Step Seven """
-""" Let's build an ml! """
-if args.breakpoints:
-    def get_genome_depths(resource_dict):
-        rd_fg_median = float(resource_dict['RD_zscore_median'])
-        rd_fg_std = float(resource_dict['RD_zscore_std'])
-        split_fg_median = float(resource_dict['split_zscore_median'])
-        split_fg_std = float(resource_dict['split_zscore_std'])
-        discordant_fg_median = float(resource_dict['discordant_zscore_median'])
-        discordant_fg_std = float(resource_dict['discordant_zscore_std'])
-        soft_fg_median = float(resource_dict['soft_zscore_median'])
-        soft_fg_std = float(resource_dict['soft_zscore_std'])
-            
-        return([rd_fg_median, rd_fg_std, split_fg_median, split_fg_std, 
-                discordant_fg_median, discordant_fg_std, soft_fg_median, soft_fg_std])
-            
-    def calc_depth(depth_df, chromo, start, stop):
-        t_median, t_std = 0, 0
+    if infile_name[-4:] == '.bam':
+        infile_name = infile_name.split('.bam')[0]
+        bashCommand = ('samtools view -h {infile}.bam -o {infile}.sam').format(infile=infile_name)
+        print(bashCommand)       
+        subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
         
-        chromo_df = depth_df.loc[(depth_df["chromo"] == chromo)]
-        fzero = chromo_df.replace(0, np.NaN)
-        fc_median = fzero["ct"].median()
-        #fc_std = fzero["ct"].std()
+        infile_name = ('{infile}.sam').format(infile=infile_name)
         
-        target_range = depth_df.loc[(depth_df["chromo"] == chromo) & (depth_df["nuc"] >= start) & (depth_df["nuc"] <= stop)]
+    if outfile[-4:] == '.sam':
+        outfile = outfile.split('.sam'[0])
         
-        t_median = target_range["ct"].median()
-        t_std = target_range["ct"].std()
+    infile = open(infile_name)
         
-        rc_median = t_median/float(fc_median)
-        
-        return(rc_median, t_median, t_std)
-        
-    def parse_sam(sam_file_name, uid_set, runmode='in_uid_set'):
-        if runmode == 'in_uid_set':
-            sam_file = open(sam_file_name)
-            uid_dict = {}
+    plus_file_name = ('{outfile}_plus').format(outfile=outfile)
+    plus_file = open(plus_file_name+'.sam', 'w')
+    
+    minus_file_name = ('{outfile}_minus').format(outfile=outfile)
+    minus_file = open(minus_file_name+'.sam', 'w')
+    
+    for line in infile:
+        if line[0] == '@':
+            plus_file.write(line)
+            minus_file.write(line)
             
-            for line in sam_file:
-                if line[0] != '@':
-                    uid, bit_score, chromo, nuc, mapq, cigar = line.split('\t')[0:6]
-                    bit_score = int(bit_score)
-                    start = int(nuc)
-                    stop = start + parse_cigar(cigar, 'last_match')
-                    if uid in uid_set:
-                        if uid in uid_dict:
-                            uid_dict[uid]+=[[bit_score, chromo, start, stop]]
-                        else:
-                            uid_dict[uid]=[[bit_score, chromo, start, stop]]
-            sam_file.close()
+        if line[0] != '@':            
+            strand = unpackbits(np.array([int(line.split('\t')[1])]))[0][4]
             
-            return(uid_dict)
+            if strand == 0:
+                plus_file.write(line)
+                
+            if strand == 1:
+                minus_file.write(line)
+    
+    infile.close()        
+    plus_file.close()
+    minus_file.close()
+    
+    convert_sort(plus_file_name)
+    convert_sort(minus_file_name)
+    
+if args.find_breakpoints:
+    #output_dir, output_file
+    run_name = args.run_name
+    
+    bash_file_name = output_file.rsplit('.', 1)[0] + '.sh'
+    
+    bash_file = open(bash_file_name, 'w')
             
-        if runmode == 'feature_load':
-            sam_file = open(sam_file_name)
-            uid_dict = {}
-            
-            for line in sam_file:
-                if line[0] != '@':
-                    uid, bit_score, chromo, nuc = line.split('\t')[0:4]
-                    bit_score = int(bit_score)
-                    nuc = int(nuc)
+    outline = ('python erisapfel.py -make -fa {ref_fa}'
+               ' -fastq_1 {fastq_1} -fastq_2 {fastq_2}'
+               ' -run_name {run_name}\n').format(
+                   ref_fa = args.fa_file, 
+                   fastq_1 = args.fastq_1,
+                   fastq_2 = args.fastq_2,
+                   run_name = run_name)
+                  
+    bash_file.write(outline)
+    
+    outline = ('python erisapfel.py -depth'
+               ' -run_name {run_name}\n').format(
+                   run_name = run_name)
+    bash_file.write(outline)
+    
+    outline = ('python erisapfel.py -peaks'
+               ' -run_name {run_name}\n').format(
+                   run_name = run_name)
+    bash_file.write(outline)
+                   
+    
+    if args.make_filter:
+        filter_bed = args.filter_bed
+        
+        outline = ('python erisapfel.py -filter -filter_bed {filter_bed} -o {run_name}_filter.p\n').format(
+            filter_bed = filter_bed, 
+            run_name = run_name)
+        
+        bash_file.write(outline)
+        
+        outline = ('python erisapfel.py -map -run_name {run_name} --filter_object {run_name}_filter.p\n').format(
+            run_name = run_name)
+        
+        bash_file.write(outline)
+    
+    outline = ('python erisapfel.py -map'
+               ' -run_name {run_name}\n').format(
+                   run_name = run_name)
+    bash_file.write(outline)
+       
+    outline = ('python erisapfel.py -localseq'
+               ' -run_name {run_name}\n').format(
+                   run_name = run_name)
+    bash_file.write(outline)
+                                    
+    monolog = ('\tRunning breakpoint identification using {bfn} ...\n').format(bfn = bash_file_name)
+    print(monolog)    
+    bashCommand = ('bash {bfn}').format(bfn = bash_file_name) 
+    print(bashCommand)       
+    subprocess.run([bashCommand], stderr=subprocess.STDOUT, shell=True)
+    
+if args.model_selection or args.model_train or args.model_predict:
+    #TODO future version    
+    from sklearn.preprocessing import MinMaxScaler
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.preprocessing import Normalizer
+    from sklearn.preprocessing import PowerTransformer
+    from sklearn.preprocessing import QuantileTransformer
+    
+    from sklearn.model_selection import train_test_split
+
+    from sklearn.metrics import confusion_matrix
+    from sklearn.metrics import f1_score
+    from imblearn.metrics import geometric_mean_score
+    
+    from sklearn.neighbors import KNeighborsClassifier
+    from sklearn.naive_bayes import GaussianNB
+    from sklearn.naive_bayes import ComplementNB
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.ensemble import RandomForestClassifier
+    
+    from imblearn import FunctionSampler
+    from imblearn.under_sampling import RandomUnderSampler, NearMiss, AllKNN
+    from imblearn.over_sampling import ADASYN, RandomOverSampler, SMOTE
+    from imblearn.pipeline import make_pipeline
+
+if args.model_selection:    
+    mge_file_name = (args.input_file)
+    
+    value_df_object = mge_to_model_parser(mge_file_name)
+    
                     
-                    if uid in uid_dict:
-                        uid_dict[uid] += [[bit_score, chromo, nuc]]
-                    else:
-                        uid_dict[uid] = [[bit_score, chromo, nuc]]
-            sam_file.close()
-            
-            return(uid_dict)
+    model_selection(value_df_object)
     
-        
-    def build_bit_loci_map(hypo, locus, list_hypo_uids, uid_dict, path):
-        print(path)
-        loci_to_reads_dict = {}
-        
-        locus_chromo = locus.split(':')[0]
-        l_start = int(locus.split(':')[1].split('-')[0])
-        l_stop = int(locus.split(':')[1].split('-')[1])
-        print('lstart, lstop', l_start, l_stop)
-        
-        for each_uid in list_hypo_uids:
-            print('each_uid', each_uid)
-            if each_uid in uid_dict:
-                pairs = uid_dict[each_uid]
-                print('each_uid, pairs', each_uid, pairs)
-                if pairs > 1:
-                    for each in pairs:
-                        bit_score, chromo, start, stop = each
-                        print('bit_score, chromo, start, stop', bit_score, chromo, start, stop)
-                        if chromo == locus_chromo:
-                            if not (stop < l_start) or not (start > l_stop):
-                                print('success')
-                                1/0
-                                if locus not in loci_to_reads_dict:
-                                    loci_to_reads_dict[locus] = [bit_score]
-                                else:
-                                    loci_to_reads_dict[locus] += [bit_score]
-                else:
-                    print('single')
-                    1/0
-                
-        return(loci_to_reads_dict)
+if args.model_train:    
+    mge_file_name = (args.input_file)
     
-    def parse_stats(hypo, iter_ml_hypo_dict, stats):
-        locus, contig, list_hypo_uids = stats
-        
-        disco_loci_to_reads_dict = build_bit_loci_map(hypo, locus, list_hypo_uids, disco_uid_dict, 'discordant')
-        split_loci_to_reads_dict = build_bit_loci_map(hypo, locus, list_hypo_uids, split_uid_dict, 'split')
-        soft_loci_to_reads_dict = build_bit_loci_map(hypo, locus, list_hypo_uids, soft_uid_dict, 'soft')
-        
-        iter_ml_hypo_dict[hypo] += [disco_loci_to_reads_dict, split_loci_to_reads_dict, soft_loci_to_reads_dict]
-        print(len(disco_loci_to_reads_dict),len(split_loci_to_reads_dict),len(soft_loci_to_reads_dict))
-        if (len(disco_loci_to_reads_dict) > 1):
-            print('yep disco')
-            1/0
-        if (len(soft_loci_to_reads_dict) > 1):
-            print('yep soft')
-            1/0 
-    
-        return(ml_hypo_dict)
-        
-    def parse_vcf(vcf_name):
-    
-        vcf_file = open(vcf_name)
-        vcf_locus_dict = {}
-        vcf_id_dict = {}
-        
-        for line in vcf_file:
-            if line[0]!='#':
-                chromo = line.split('\t')[0]
-                start = int(line.split('\t')[1])
-                 
-                v_id = int(line.split('\t')[2])
-                
-                nstart = start - 150
-                nstop = start + 150
-                locus = ('{}:{}-{}').format(chromo, nstart, nstop)
-                
-                if chromo not in vcf_locus_dict:
-                    vcf_locus_dict[chromo] = [[nstart, nstop]]
-                else:
-                    vcf_locus_dict[chromo] += [[nstart, nstop]]
+    value_df_object = mge_to_model_parser(mge_file_name)
                     
-                if v_id not in vcf_id_dict:
-                    vcf_id_dict[locus] = v_id
-                
-        vcf_file.close()
-        
-        return(vcf_locus_dict, vcf_id_dict)
-        
-    """
+    topmodel = model_train(value_df_object) 
     
-    """   
-
-    resource_dict = io_load()
-     
-    fa_file = resource_dict['genome_fa']
-    each_sample = resource_dict['run_name']
-    read_type_list = resource_dict['read_types']
+if args.model_predict:    
+    mge_file_name = (args.input_file)
     
-    fg_depths = get_genome_depths(resource_dict)
-
-    do_this = True
-    if do_this:    
-        # Load refined_map
-        pickle_out = ("{}/refined_map.p").format(pickles_dir)
-        refined_map = pickle.load(open(pickle_out))
-        uid_set = set()
-            
-        """ First, build the loci information
-        Each line in the gff contains a single locus. We want to extract all read
-        all read depth measures as well as the reference_sequence of these regions.
-        Some of these reads have already been processed, we can load the previous peak data for those files that have already been measured
-        This may be a chunk of code but it saves some time.
-        
-        For those loci that haven't been preocessed yet we need to load the relevant mpileups and and take those measures.
-        """
-            
-        depth_pickle_name = ('{}/peaks_{}_RD.p').format(pickles_dir, each_sample)
-        rd_depth_dict = pickle_loader(depth_pickle_name, 'dict')
-        
-        depth_pickle_name = ('{}/mpileup_{}_RD.p').format(pickles_dir, each_sample)
-        rd_mpileup_df = pickle_loader(depth_pickle_name, 'df')
-    
-        depth_pickle_name = ('{}/peaks_{}_split.p').format(pickles_dir, each_sample)
-        split_depth_dict = pickle_loader(depth_pickle_name, 'dict')
-        
-        depth_pickle_name = ('{}/mpileup_{}_split.p').format(pickles_dir, each_sample)
-        split_mpileup_df = pickle_loader(depth_pickle_name, 'df')
-        
-        depth_pickle_name = ('{}/peaks_{}_discordant.p').format(pickles_dir, each_sample)
-        discordant_depth_dict = pickle_loader(depth_pickle_name, 'dict')
-        
-        depth_pickle_name = ('{}/mpileup_{}_discordant.p').format(pickles_dir, each_sample)
-        discordant_mpileup_df = pickle_loader(depth_pickle_name, 'df')
-    
-        depth_pickle_name = ('{}/peaks_{}_soft.p').format(pickles_dir, each_sample)
-        soft_depth_dict = pickle_loader(depth_pickle_name, 'dict')
-        
-        depth_pickle_name = ('{}/mpileup_{}_soft.p').format(pickles_dir, each_sample)
-        soft_mpileup_df = pickle_loader(depth_pickle_name, 'df')
-        
-        line_ct = 0
-        dict_ct = 0
-        df_ct = 0
-        loci_to_reads_dict = {}
-        
-        gff_file_name = ('{}/{}_realigned.gff').format(idx_dir, output_file)
-        gff_file = open(gff_file_name)
-        for line in gff_file:
-            print(line)
-            line_ct += 1 
-            if line[0] != '#':
-                #print(line_ct)
-                #NC_001147.6     erisapfel       hypo:267_774_right_8622470508732422200_9_aligned_split  1091195 1091286 .       +       183     node_uid=hypo:267_774_right_8622470508732422200,11,102,182.869; orient=forward; alt_seq=ATTTTCAttttttttttttAATTTCGGTCAGAAAGCCGGGTAAGGTATGACAGCGAGAGTAGAGGTAGATGTGAGAGAgtgtgtgggtgtgg; ref_seq=ATTTTCATTTTTTTTTTTTAATTTCGGTCAGAAAGCCGGGTAAGGTATGACAGCGAGAGTAGAGGTAGATGTGAGAGAGTGTGTGGGTGTGG; contig=ACATGGGTTTATTTTCATTTTTTTTTTTTAATTTCGGTCAGAAAGCCGGGTAAGGTATGACAGCGAGAGTAGAGGTAGATGTGAGAGAGTGTGTGGGTGTGGGTGTGGGTGTGTGGGTG;type=",transposition,transposition,ODIRA_CNV,transposition,transposition,transposition,transposition,transposition,local_rearrangement_or_CNV,transposition,transposition,transposition,ODIRA_CNV,transposition,transposition,local_rearrangement_or_CNV,transposition,transposition,local_rearrangement_or_CNV,transposition,transposition,transposition,transposition,ODIRA_CNV,transposition,local_rearrangement_or_CNV,transposition,transposition,transposition,transposition,transposition,ODIRA_CNV,transposition,ODIRA_CNV,transposition,transposition,transposition,local_rearrangement_or_CNV,ODIRA_CNV,transposition,transposition"
-    
-                chromo, source, hypo, start, stop, dot, dash, score, deets = line.split('\t')
-                
-                node_uid, orient, alt_seq, ref_seq, contig = deets.split(';')
-                start = int(start)
-                stop = int(stop)
-                locus = ('{}:{}-{}').format(chromo, start, stop)
-                
-                hypo_single = hypo.split('_')[0] + '_' + hypo.split('_')[1]
-                
-                uid_raw = refined_map[hypo_single]
-                list_hypo_uids = set()
-                for each in uid_raw:
-                    uid_set.add(each)
-                    uid_set.add(each.split('_')[0])
-                    list_hypo_uids.add(each)
-                    list_hypo_uids.add(each.split('_')[0])
+    value_df_object = mge_to_model_parser(mge_file_name)
                     
-                if 'reverse' in orient:
-                    loci_seq = reverse_compliment(ref_seq.split('=')[1])
-                else:
-                    loci_seq = ref_seq.split('=')[1]
-                    
-                #swapped out hypo single
-                if hypo_single not in ml_hypo_dict:
-                    ml_hypo_dict[hypo_single] = [[locus, contig, list_hypo_uids]]
-                else:
-                    ml_hypo_dict[hypo_single] += [[locus, contig, list_hypo_uids]]
-                    
-                if hypo_single not in ml_san_check:
-                    ml_san_check[hypo_single] = [[line, locus, contig, list_hypo_uids]]
-                else:
-                    ml_san_check[hypo_single] += [[line, locus, contig, list_hypo_uids]]                    
-                
-                
-                if locus not in ml_loci_dict:               
-                    if locus in rd_depth_dict:
-                        rd_rel_c, rd_rel_g, rd_t_std = rd_depth_dict[locus]
-                        dict_ct+=1
-                    else:
-                        rd_rel_c, raw_g, rd_t_std = calc_depth(rd_mpileup_df, chromo, start, stop)
-                        rd_rel_g = raw_g / float(fg_depths[0])
-                        df_ct+=1
-                    #print('rd')
-        
-                    if locus in split_depth_dict:
-                        sp_rel_c, sp_rel_g, sp_t_std = split_depth_dict[locus]
-                        dict_ct+=1
-                    else:
-                        sp_rel_c, raw_g, sp_t_std = calc_depth(split_mpileup_df, chromo, start, stop)
-                        sp_rel_g = raw_g / float(fg_depths[2])
-                        df_ct+=1
-                    #print('sp')
-        
-                    if locus in discordant_depth_dict:
-                        ds_rel_c, ds_rel_g, ds_t_std = discordant_depth_dict[locus]
-                        dict_ct+=1
-                    else:
-                        ds_rel_c, raw_g, ds_t_std = calc_depth(discordant_mpileup_df, chromo, start, stop)
-                        ds_rel_g = raw_g / float(fg_depths[4])
-                        df_ct+=1
-                    #print('ds')
-                        
-                    if locus in soft_depth_dict:
-                        so_rel_c, so_rel_g, so_t_std = soft_depth_dict[locus]
-                        dict_ct+=1
-                    else:
-                        so_rel_c, raw_g, so_t_std = calc_depth(soft_mpileup_df, chromo, start, stop)
-                        so_rel_g = raw_g / float(fg_depths[6])
-                        df_ct+=1
-                    #print('so')
-                
-                    ml_loci_dict[locus]=[rd_rel_c, rd_rel_g, rd_t_std, fg_depths[1],
-                                 sp_rel_c, sp_rel_g, sp_t_std, fg_depths[3],
-                                 ds_rel_c, ds_rel_g, ds_t_std, fg_depths[5],
-                                 so_rel_c, so_rel_g, so_t_std, fg_depths[7], loci_seq]
-        gff_file.close()
-        
-        print('this far')
-        
-        resource_pickle_name = ('{}/uid_set.p').format(idx_dir)         
-        with open(resource_pickle_name, 'wb') as file:
-            pickle.dump(uid_set, file)
-        
-        io_append(ml_loci_dict, 'ml_loci')
-        io_append(ml_hypo_dict, 'ml_hypo')
-    
-    """Second, build the hypo information
-    Unlike the locus information the hypo data is specific to certian connected reads not individual locations.
-    To get information about these reads we need to keep the connection between them intact.
-    Each line has a hypo which should be present in the refined_map which stores the uid_list. 
-    These uid's allow us to reach into the sam files and extract the bit encoded information. 
-    These bit encodings can (i hope) instuct us as to the nature of the underlying structure.
-    
-    Beyond that each line has a locus which can be used to look up the locus stats in ml_loci_dict and the aligned contig.
-    """
-
-    if not do_this:
-        ml_hypo_dict, ml_loci_dict = io_load('ml')
-    
-    resource_pickle_name = ('{}/uid_set.p').format(idx_dir)
-    with open(resource_pickle_name, 'rb') as uid_file:
-        uid_set = pickle.load(uid_file)
-    
-    pickle_out = ("{}/refined_map.p").format(pickles_dir)
-    refined_map = pickle.load(open(pickle_out))
-
-#    refct = 0
-#    allrefset = set()
-#    hitrefset = set()
-#    is_ref = open('refined_map.tab','w')
-#    for hypo, uid_list in refined_map.items():
-#        outline = ('{}\t{}\n').format(hypo, uid_list)
-#        is_ref.write(outline)
-#        for each in uid_list:
-#            allrefset.add(each)            
-#        if len(uid_list) > 1:
-#            refct += 1
-#            hitrefset.add(each)
-#    is_ref.close()
-    
-    base_filename=('{}/{}').format(bam_dir, output_file)
-    for each_type in read_type_list:
-        if each_type == 'discordant':
-            #sam_file_name = base_filename + '_discordant.sam'
-            #disco_uid_dict = parse_sam(sam_file_name, uid_set)
-            # TODO shift to the dictionary type
-            disco_uid_dict = parse_sam(resource_dict['discordant_sam_file'], uid_set) 
-        if each_type == 'split':
-            #sam_file_name = base_filename + '_split.sam'
-            #split_uid_dict = parse_sam(sam_file_name, uid_set)      
-            # TODO shift to the dictionary type
-            split_uid_dict = parse_sam(resource_dict['split_sam_file'], uid_set) 
-        if each_type == 'soft':
-            soft_uid_dict = parse_sam(resource_dict['soft_sam_file'], uid_set)
-            
-    #print('outside disco_uid_dict', len(disco_uid_dict))
-    #print('outside split_uid_dict', len(split_uid_dict))
-    #print(len(soft_uid_dict))
-    
-    iter_ml_hypo_dict = ml_hypo_dict.copy()
-
-    for hypo, all_stats in ml_hypo_dict.items():
-        print('ml', hypo, ml_san_check[hypo])
-        print('as', hypo, all_stats)
-        for index in range(len(all_stats)):
-            stats = all_stats[index]                    
-            iter_ml_hypo_dict = parse_stats(hypo, iter_ml_hypo_dict, stats)
-            print()
-        
-#        if len(all_stats) > 1:
-#            print('all_stats', all_stats)
-#            for index in range(len(all_stats)):
-#                stats = all_stats[index]
-#                if len(stats) < 2:
-#                    print(index, all_stats)
-#                    print(stats)
-#                    
-#                ml_hypo_dict = parse_stats(hypo, ml_hypo_dict, stats, len(all_stats))
-#        else:
-##            print('small', all_stats)
-#            ml_hypo_dict = parse_stats(hypo, ml_hypo_dict, all_stats, len(all_stats))
-
-    #print('outside uid_list', list_hypo_uids)
-    #print('outside disco_uid_dict', disco_uid_dict)
-    #print(soft_uid_dict)
-        
-    #print('485_485', ml_hypo_dict['485_485'])
-        
-    print('nope')
-    1/0
-
-    io_append(ml_hypo_dict, 'ml_hypo')
-    
-    """Third, build the connections 
-    """   
-    
-    ml_hypo_dict, ml_loci_dict = io_load('ml')
-    
-    #print(len(ml_hypo_dict), len(ml_loci_dict))
-    
-    for hypo, deets in ml_hypo_dict.items():
-        
-        locus, contig, uid_list, dict_list = deets
-        disco_loci_to_reads_dict, split_loci_to_reads_dict, soft_loci_to_reads_dict = dict_list
-        #print(hypo)
-        #print(locus, contig, uid_list, disco_loci_to_reads_dict, split_loci_to_reads_dict, soft_loci_to_reads_dict)
-        #1/0
-
-  
+    topmodel = model_predict(value_df_object) 
     
 
-    
-    sam_file_name = 'C:\\Gresham\\MinIon\\xxx.sam'
-    vcf_name = 'C:\\Gresham\\Project_Erisapfel\\bam\\BC03_1731_sniffles.vcf'
-    
-    uid_dict = parse_sam(sam_file_name, '', 'feature_load')
-    vcf_locus_dict, vcf_id_dict = parse_vcf(vcf_name)
-    
-    vcf_scores = {}
-    vcf_total = 0
-    out_scores = {}
-    out_total = 0
-    
-    for uid, deets in uid_dict.items():
-        if len(deets) > 1:
-            for each_d in deets:
-                bs, ch, nu = each_d
-                
-                if ch in vcf_locus_dict:
-                    ranges = vcf_locus_dict[ch]
-                    for each_r in ranges:
-                        if (nu >= each_r[0]) and (nu <= each_r[1]):
-                            vcf_total+=1
-                            if bs not in vcf_scores:
-                                vcf_scores[bs] = 1
-                            else:
-                                vcf_scores[bs] +=1  
-                        else:
-                            out_total+=1
-                            if bs not in out_scores:
-                                out_scores[bs] = 1
-                            else:
-                                out_scores[bs] +=1
-                                
-    #print(vcf_scores)
-    #print(out_scores)
-    
-    sig_list = []
-    
-    for bs, ct in out_scores.items():
-        if bs in vcf_scores:    
-            vcf_ct = vcf_scores[bs]        
-            oddsratio, pvalue = stats.fisher_exact([[vcf_ct, vcf_total], [ct, out_total]])
-            if (pvalue < 0.05) and (oddsratio >= 2) and min(ct, vcf_ct) > 5:
-                print(bs, oddsratio, pvalue)
-                sig_list.append([bs, oddsratio, pvalue, vcf_ct, ct])
-    
-    
-    """
-    End of script
-    """
-
-
-
+                            
