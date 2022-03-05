@@ -38,9 +38,14 @@ _Important note for NYU Prince users:
  * Analysis of discordant reads requires Paired End reads.
 
 ### -depth
-* Purpose: Calculates read depth statistics over chrosomes. Positive filtering can be performed, wherein only reads within a given region are counted. This is helpful for removing aberrant depths generated from multiple copy regions such as transposons and rDNA.  
+* Purpose: Calculates read depth statistics over chrosomes.  
 * Format: 
  ```
+python erisapfel.py -depth -run_name <output prefix>
+ ```
+ Optional:  Positive filtering can be performed, wherein only reads within a given region are counted. This is helpful for removing aberrant depths generated from multiple copy regions such as transposons and rDNA.
+ ```
+#Optional -positive filter 
 python erisapfel.py -depth -filter_bed <filter_bed_format_file> -run_name <output prefix>
  ```
 ### -peaks
@@ -71,7 +76,7 @@ python erisapfel.py -depth -filter_bed <filter_bed_format_file> -run_name <outpu
 			Breakpoints are required to meet a threshold quality score cutoff. By default a breakpoint cutoff of 10, with a split weight (sw) of 1 and a discordant weight (dw) of 3, will require a minimum of one split-read and three supporting discordant reads. The optional -dw command allows you to set the discordant read weight to any integer.
 --->
 
-### -filter
+### OPTIONAL -filter
 * Purpose: This step generates a filter region pickle file using bed formatted input. These are negative filters, wherein breakpoints within these regions will be removed from further analysis. One may desire to avoid these regions because of highly repetitive sequences (rDNA, Mitochondria) or low-complexity sequences (Telomeres). 
 Sequencing artifacts can make identification of breakpoints difficult. By constructing a filter using a bed file generated using an ancestor (ie. a genetic background that lacks CNVs) these artifacts can be readily identified and removed before further analysis. 
 * Format:
@@ -92,10 +97,14 @@ python erisapfel.py -filter -gff demo/input/demo_filter.gff -ancestor demo/outpu
 			The optional -ancestor command can accept multiple break_bed files as input. Any breakpoint reported in these files will be added to the filter. All ancestor breakpoints are reported in the summary report using the name of the file they originated in.
 --->
 ### -map
-* Purpose: Maps discordant and splitreads into reference genome to generate candidate breakpoints. If filtering is used breakpoints that fall within filtered regions will not be propagated downstream.
+* Purpose: Maps discordant and splitreads into reference genome to generate candidate breakpoints. 
 * Format:
 ```
-python erisapfel.py -map -run_name <output prefix> [optional --load_filter <sample_name>_filter.p]
+python erisapfel.py -map -run_name <output prefix> 
+```
+Optional: If filtering is used breakpoints that fall within filtered regions will not be propagated downstream.
+```
+python erisapfel.py -map -run_name <output prefix> --load_filter <sample_name>_filter.p
 ```
 
 ### -localseq
@@ -139,3 +148,40 @@ python erisapfel.py -realign -fa demo/input/demo.fna -contigs demo/input/localse
 			This optional command allows you to set the highest E value allowed for a realignment to be considered. This field supports scientific notation (eg. 0.05, 5e-2).
 --->
 
+## Output Analysis 
+After the run has completed several resulting files should be analyzed to help determine likely breakpoints.
+
+All files are located in the ```results/<sample_name>/``` directory.
+
+### Bams 
+Discordant and split reads are subset in their own bam files, viewable in the ```/results/<sample_name>/bam/``` directory. Files that may be of interest are:
+```
+<sample_name>.bam - Complete, aligned reads bam
+<sample_name>.bedGraph - bedgraph of complete, aligned bam
+<sample_name>_discordant.bam - Discordant reads bam
+<sample_name>_split.bam - Split reads bam
+```
+
+### Breakpoint feature files
+Resolved high confidence breakpoints are reported as features in the ```/results/<sample_name>/output/``` directory. 
+
+```
+DGY3_realigned.gff - Final candidate list, with scores and breakpoint sequence 
+```
+
+## How to make sense of the results in the _realigned.gff_ file
+The _realigned.gff_ file follows a simple convention for highlighting breakpoints. Each breakpoint has at least two components: an anchor and a breezepoint. The anchor, by definition, contains a uniquely mapping sequence. Conversely, the breezepoint can map to numerous places with no restriction, this allows for potential breezepoints to map to repeat or low-complexity regions, such as gene homologs and transposon elements.
+
+When possible the assemdbled contig that generated the breakpoint is included.
+
+### Example _realigned.gff_
+
+```
+[chromosome]    [source]    [unique_id]   [start]   [stop]    [dot] [dot]   [score]   [details]
+I   erisapfel   7458_anchor_split	39821    39905   .   .   698    node_uid=7458;otherside=NC_001147.6:1091237-1091291_breeze;contig=CACACACACCACACCCACACACCCACACACCACACCCACACACTCTCTCACATCTACCTCTACTCTCGCTGTCAT
+IV   erisapfel   7458_breeze_split   1091237   1091291   .   .   698    node_uid=7458_anchor;otherside=NC_001144.5:30-111;contig=CACACACACCACACCCACACACCCACACACCACACCCACACACTCTCTCACATCTACCTCTACTCTCGCTGTCAT
+```
+In this example the proposed breakpoint "7458" spans from chrI:30-111 (anchor) to chrIV:1091237-1091291 (breezepoint). It has a score of 698 and would be reported using the default _min_score_.
+
+# Note on performance
+Erisapfel performs best with breakpoints spanning unique sequences and at sufficient depth (~30x depth). For lower depths of sequencing or breakpoints that occur in low-complexity or non-unique sequences this performance will suffer.  For breakpoints that are associated with transposons or other known mobile genetic elements, detection can be improved by using Erisapfel's MGE mode.
