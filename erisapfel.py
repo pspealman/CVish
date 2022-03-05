@@ -33,7 +33,7 @@ Future versions:
     _-_ Added 'find_breakpoints'
         
 
-@author: Pieter Spealman 
+@author: Pieter Spealman ps163@nyu.edu
 """
 
 """Requirements :
@@ -46,7 +46,7 @@ samblaster  0.1.26
 mafft       7.475
 emboss      6.6.0
 """
-#reduced_file
+#
 import os
 import argparse
 import subprocess
@@ -240,7 +240,7 @@ def test():
     print(bashCommand)       
     (subprocess.run([bashCommand],stderr= subprocess.STDOUT,shell=True))
     
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(add_help=True)
 #handle help_dialog
 parser.add_argument('-man',"--manual", action='store_true')
 parser.add_argument('-demo',"--demo",action='store_true')
@@ -316,11 +316,13 @@ parser.add_argument('-breakpoints','--find_breakpoints', action='store_true')
 parser.add_argument('-strand', '--separate_by_strand')
 
 #get feature values
+#python erisapfel.py -mge /scratch/ps163/Project_Carolino/metadata/te_a_NCBI_Gap1.gff -run_name ${sample_name}
+#python erisapfel.py -kmge /scratch/ps163/Project_Carolino/mugio/DGY1657_gap1_mge_mugio_predicted_TEa.gff -mge /scratch/ps163/Project_Carolino/metadata/te_a_NCBI_Gap1.gff -run_name ${sample_name}
 parser.add_argument('-mge', "--mge_file")
 parser.add_argument('-kmge', "--known_mge")
 
 #model functions
-#python erisapfel.py -ml_select -i temp/mge_value_df.tab --metaparameters fast
+#python erisapfel.py -ml_select -i temp/mge_value_df.tab --metaparameters fast -o
 parser.add_argument('-ml_select', '--model_selection', action='store_true')
 parser.add_argument('-ml_meta', '--metaparameters')
 
@@ -330,7 +332,7 @@ parser.add_argument('-ml_p', '--preprocessor')
 parser.add_argument('-ml_s', '--sampler')
 parser.add_argument('-ml_c', '--classifier')
 
-#python erisapfel.py -ml_predict -i temp/mge_value_df.tab --model_object DGY_model.p -o 
+#python erisapfel.py -ml_predict --model_object DGY_model.p -run_name ${sample_name}
 parser.add_argument('-ml_predict', '--model_predict', action='store_true')
 parser.add_argument('-model', '--model_object')
 parser.add_argument('-all', '--return_all', action='store_true')
@@ -441,7 +443,7 @@ else:
 if args.min_score:
     c_min_score = int(args.min_score)
 else:
-    c_min_score = 600
+    c_min_score = 100
 
 def pickle_loader(file_name, runmode):
     if runmode == 'dict':
@@ -876,11 +878,11 @@ def populate_filter_dict(chromo, start, stop, region):
         for index in range(start,stop+1):
             filter_region_dict[chromo].add(index)  
 
-    if region in region_name_dict:
-        region_name_dict[region]+=1
-        
     if region not in region_name_dict:
-        region_name_dict[region]=1 
+        region_name_dict[region]=0 
+        
+    region_name_dict[region]+=1
+    
 
 def parse_filter_gff(gff_file):
     parse_filter_object = open(gff_file)
@@ -1066,7 +1068,7 @@ def build_mge_trace(subz_df, suby_df, each_type, c_median, g_median, mge_g_std, 
                             rel_c = depth_median/float(c_median)
                             rel_g = depth_median/float(g_median)
                                                         
-                            outline = ('{chromo}\t{each_type}_depth\tTea_CNV'
+                            outline = ('{chromo}\t{each_type}_depth\tMGE_CNV'
                                        '\t{start}\t{stop}\t{sum_d}\t.\t.'
                                        '\tID={chromo}:{start}-{stop};rel_chromosome_RD={rel_c};rel_genome_RD={rel_g};sample={sample}\n'
                                        ).format(
@@ -1538,38 +1540,47 @@ def collapse_other(chromoside_dict):
                     next_start=chromoside_dict[next_uid]['anchor_start']
                     next_stop=chromoside_dict[next_uid]['anchor_stop']
                     
-                    if fourway_test(uid_start, next_start, uid_stop, next_stop, gap):
-                        uid_o_start=chromoside_dict[uid]['other_start']
-                        uid_o_stop=chromoside_dict[uid]['other_stop']
-                        next_o_start=chromoside_dict[next_uid]['other_start']
-                        next_o_stop=chromoside_dict[next_uid]['other_stop']       
-                        
+                    uid_o_start=chromoside_dict[uid]['other_start']
+                    uid_o_stop=chromoside_dict[uid]['other_stop']
+                    next_o_start=chromoside_dict[next_uid]['other_start']
+                    next_o_stop=chromoside_dict[next_uid]['other_stop'] 
+                    
+                    pass_both = False
+                    
+                    if fourway_test(uid_start, next_start, uid_stop, next_stop, gap):    
                         if fourway_test(uid_o_start, next_o_start, uid_o_stop, next_o_stop, gap):
-                            new_score = max(chromoside_dict[uid]['score'], chromoside_dict[next_uid]['score'])
-                            
-                            print('pass 4')
-                            
-                            print(uid, next_uid)
-                            
-                            print(chromoside_dict[uid])
-                            print(chromoside_dict[next_uid])
+                            pass_both = True
+                        
+                    if fourway_test(uid_start, next_o_start, uid_stop, next_o_start, gap): 
+                        if fourway_test(uid_o_start, next_start, uid_o_stop, next_stop, gap):
+                            pass_both = True
+                        
+                    if pass_both:
+                        new_score = max(chromoside_dict[uid]['score'], chromoside_dict[next_uid]['score'])
+                        
+                        print('pass 4')
+                        
+                        print(uid, next_uid)
+                        
+                        print(chromoside_dict[uid])
+                        print(chromoside_dict[next_uid])
+                                                    
+                        new_contig_set = chromoside_dict[uid]['contig']
+                        for contig in chromoside_dict[next_uid]['contig']:
+                            new_contig_set.add(contig)
                                                         
-                            new_contig_set = chromoside_dict[uid]['contig']
-                            for contig in chromoside_dict[next_uid]['contig']:
-                                new_contig_set.add(contig)
-                                                            
-                            to_add_dict = {"anchor_chromo":uid_chromo, 
-                                            "anchor_start":min(uid_start, next_start),
-                                            "anchor_stop":max(uid_stop, next_stop),
-                                            "other_chromo":uid_o_chromo,
-                                            "other_start":min(uid_o_start, next_o_start),
-                                            "other_stop":max(uid_o_stop, next_o_stop),
-                                            "score":new_score,
-                                            "contig":new_contig_set}
-                            
-                            print('to_add_dict', to_add_dict)
-                            
-                            return(True, uid, next_uid, to_add_dict)
+                        to_add_dict = {"anchor_chromo":uid_chromo, 
+                                        "anchor_start":min(uid_start, next_start),
+                                        "anchor_stop":max(uid_stop, next_stop),
+                                        "other_chromo":uid_o_chromo,
+                                        "other_start":min(uid_o_start, next_o_start),
+                                        "other_stop":max(uid_o_stop, next_o_stop),
+                                        "score":new_score,
+                                        "contig":new_contig_set}
+                        
+                        print('to_add_dict', to_add_dict)
+                        
+                        return(True, uid, next_uid, to_add_dict)
                         
     return(False, 0, 0, to_add_dict)
 
@@ -1629,6 +1640,146 @@ def collapse_hypotheses(otherside_dict, gap):
             
     return(otherside_dict)
                               
+def calculate_global_disco_stats(each_sample):
+    global_disco_stats_dict ={
+        'rd_df':0, 'rd_global_median': 0, 'rd_global_std': 0,
+        'disco_df':0, 'disco_global_median': 0, 'disco_global_std': 0,
+        'split_df':0, 'split_global_median': 0, 'split_global_std': 0}
+    
+    pickle_name = ('{}/mpileup_{}_RD.p').format(pickles_dir, each_sample)
+    rd_df = pickle_loader(pickle_name, 'df')
+    
+    fzero = rd_df.replace(0, np.NaN)
+    rd_global_median = fzero["ct"].median()
+    rd_global_std = fzero["ct"].std()
+    
+    global_disco_stats_dict['rd_df'] = rd_df
+    global_disco_stats_dict['rd_global_median'] = rd_global_median
+    global_disco_stats_dict['rd_global_std'] = rd_global_std
+    
+    pickle_name = ('{}/mpileup_{}_discordant.p').format(pickles_dir, each_sample)
+    disco_df = pickle_loader(pickle_name, 'df')
+    
+    fzero = disco_df.replace(0, np.NaN)
+    disco_global_median = fzero["ct"].median()
+    disco_global_std = fzero["ct"].std()
+    
+    global_disco_stats_dict['disco_df'] = disco_df
+    global_disco_stats_dict['disco_global_median'] = disco_global_median
+    global_disco_stats_dict['disco_global_std'] = disco_global_std
+    
+    pickle_name = ('{}/mpileup_{}_split.p').format(pickles_dir, each_sample)
+    split_df = pickle_loader(pickle_name, 'df')
+    
+    fzero = split_df.replace(0, np.NaN)
+    split_global_median = fzero["ct"].median()
+    split_global_std = fzero["ct"].std()
+           
+    global_disco_stats_dict['split_df'] = split_df
+    global_disco_stats_dict['split_global_median'] = split_global_median
+    global_disco_stats_dict['split_global_std'] = split_global_std
+    
+    return(global_disco_stats_dict)
+
+def collect_stats(chromo, start, stop, mpileup_df, runmode, score_store):
+    anchor_store = ('{}:{}-{}').format(
+        chromo, start, stop)
+    
+    if runmode == 'rd':
+        type_df = mpileup_df['rd_df']
+        global_median = mpileup_df['rd_global_median']
+        global_std = mpileup_df['rd_global_std']
+        
+        if anchor_store in score_store[runmode]:
+            sub_df = score_store[runmode][anchor_store] 
+        else:
+            sub_df = type_df.loc[(type_df["chromo"] == chromo) & 
+               (type_df["nuc"] >= start) & 
+               (type_df["nuc"] <= stop)]
+            
+            score_store[runmode][anchor_store] = sub_df
+    
+    if runmode == 'split':
+        type_df = mpileup_df['split_df']
+        global_median = mpileup_df['split_global_median']
+        global_std = mpileup_df['split_global_std']
+        
+        if anchor_store in score_store[runmode]:
+            sub_df = score_store[runmode][anchor_store] 
+        else:
+            sub_df = type_df.loc[(type_df["chromo"] == chromo) & 
+               (type_df["nuc"] >= start) & 
+               (type_df["nuc"] <= stop)]
+            
+            score_store[runmode][anchor_store] = sub_df
+        
+    if runmode == 'disco':
+        type_df = mpileup_df['disco_df']
+        global_median = mpileup_df['disco_global_median']
+        global_std = mpileup_df['disco_global_std']  
+            
+        if anchor_store in score_store[runmode]:
+            sub_df = score_store[runmode][anchor_store] 
+        else:
+            sub_df = type_df.loc[(type_df["chromo"] == chromo) & 
+               (type_df["nuc"] >= start) & 
+               (type_df["nuc"] <= stop)]
+            
+            score_store[runmode][anchor_store] = sub_df
+                            
+    sub_median = sub_df["ct"].median()
+    sub_sum = sub_df["ct"].sum()
+    
+    if sub_sum > 3:
+
+        if global_std == 0:
+            global_std = 1
+            
+        difference_ratio = (sub_median-global_median)/global_std
+    
+        return(difference_ratio, score_store)
+    
+    return(0, score_store)
+
+def disco_depth_stats(uid_deets, global_disco_stats_dict, score, score_store):        
+    
+    anchor_chromo = uid_deets['anchor_chromo']
+    anchor_start = uid_deets['anchor_start']
+    anchor_stop = uid_deets['anchor_stop']
+    
+    other_chromo = uid_deets['other_chromo']
+    other_start = uid_deets['other_start']
+    other_stop = uid_deets['other_stop']
+    
+    rd_anchor_term, score_store = collect_stats(
+        anchor_chromo, anchor_start, 
+        anchor_stop, global_disco_stats_dict, "rd", score_store)
+                
+    rd_other_term, score_store = collect_stats(
+        other_chromo, other_start, 
+        other_stop, global_disco_stats_dict, "rd", score_store)
+    
+    split_anchor_term, score_store = collect_stats(
+        anchor_chromo, anchor_start, 
+        anchor_stop, global_disco_stats_dict, "split", score_store)
+            
+    split_other_term, score_store = collect_stats(
+        other_chromo, other_start, 
+        other_stop, global_disco_stats_dict, "split", score_store)
+            
+    disco_anchor_term, score_store = collect_stats(
+        anchor_chromo, anchor_start, 
+        anchor_stop, global_disco_stats_dict, "disco", score_store)
+            
+    disco_other_term, score_store = collect_stats(
+        other_chromo, other_start, 
+        other_stop, global_disco_stats_dict, "disco", score_store)
+    
+    relative_score = (rd_anchor_term * score * rd_other_term + 
+        split_anchor_term * score* split_other_term +
+        disco_anchor_term * score* disco_other_term)
+    
+    return(relative_score, score_store)
     
 def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap):
     '''
@@ -1660,151 +1811,7 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap):
     resource_dict = io_load()
         
     each_sample = resource_dict['run_name']
-    
-    def calculate_global_disco_stats(each_sample):
-        global_disco_stats_dict ={
-            'rd_df':0, 'rd_global_median': 0, 'rd_global_std': 0,
-            'disco_df':0, 'disco_global_median': 0, 'disco_global_std': 0,
-            'split_df':0, 'split_global_median': 0, 'split_global_std': 0}
-        
-        pickle_name = ('{}/mpileup_{}_RD.p').format(pickles_dir, each_sample)
-        rd_df = pickle_loader(pickle_name, 'df')
-        
-        fzero = rd_df.replace(0, np.NaN)
-        rd_global_median = fzero["ct"].median()
-        rd_global_std = fzero["ct"].std()
-        
-        global_disco_stats_dict['rd_df'] = rd_df
-        global_disco_stats_dict['rd_global_median'] = rd_global_median
-        global_disco_stats_dict['rd_global_std'] = rd_global_std
-        
-        pickle_name = ('{}/mpileup_{}_discordant.p').format(pickles_dir, each_sample)
-        disco_df = pickle_loader(pickle_name, 'df')
-        
-        fzero = disco_df.replace(0, np.NaN)
-        disco_global_median = fzero["ct"].median()
-        disco_global_std = fzero["ct"].std()
-        
-        global_disco_stats_dict['disco_df'] = disco_df
-        global_disco_stats_dict['disco_global_median'] = disco_global_median
-        global_disco_stats_dict['disco_global_std'] = disco_global_std
-        
-        pickle_name = ('{}/mpileup_{}_split.p').format(pickles_dir, each_sample)
-        split_df = pickle_loader(pickle_name, 'df')
-        
-        fzero = split_df.replace(0, np.NaN)
-        split_global_median = fzero["ct"].median()
-        split_global_std = fzero["ct"].std()
-               
-        global_disco_stats_dict['split_df'] = split_df
-        global_disco_stats_dict['split_global_median'] = split_global_median
-        global_disco_stats_dict['split_global_std'] = split_global_std
-        
-        return(global_disco_stats_dict)
-    
-    def collect_stats(chromo, start, stop, mpileup_df, runmode, score_store):
-        anchor_store = ('{}:{}-{}').format(
-            chromo, start, stop)
-        
-        if runmode == 'rd':
-            type_df = mpileup_df['rd_df']
-            global_median = mpileup_df['rd_global_median']
-            global_std = mpileup_df['rd_global_std']
-            
-            if anchor_store in score_store[runmode]:
-                sub_df = score_store[runmode][anchor_store] 
-            else:
-                sub_df = type_df.loc[(type_df["chromo"] == chromo) & 
-                   (type_df["nuc"] >= start) & 
-                   (type_df["nuc"] <= stop)]
                 
-                score_store[runmode][anchor_store] = sub_df
-        
-        if runmode == 'split':
-            type_df = mpileup_df['split_df']
-            global_median = mpileup_df['split_global_median']
-            global_std = mpileup_df['split_global_std']
-            
-            if anchor_store in score_store[runmode]:
-                sub_df = score_store[runmode][anchor_store] 
-            else:
-                sub_df = type_df.loc[(type_df["chromo"] == chromo) & 
-                   (type_df["nuc"] >= start) & 
-                   (type_df["nuc"] <= stop)]
-                
-                score_store[runmode][anchor_store] = sub_df
-            
-        if runmode == 'disco':
-            type_df = mpileup_df['disco_df']
-            global_median = mpileup_df['disco_global_median']
-            global_std = mpileup_df['disco_global_std']  
-                
-            if anchor_store in score_store[runmode]:
-                sub_df = score_store[runmode][anchor_store] 
-            else:
-                sub_df = type_df.loc[(type_df["chromo"] == chromo) & 
-                   (type_df["nuc"] >= start) & 
-                   (type_df["nuc"] <= stop)]
-                
-                score_store[runmode][anchor_store] = sub_df
-                                
-        sub_median = sub_df["ct"].median()
-        sub_sum = sub_df["ct"].sum()
-        
-        if sub_sum > 3:
-
-            if global_std == 0:
-                global_std = 1
-                
-            difference_ratio = (sub_median-global_median)/global_std
-        
-            return(difference_ratio, score_store)
-        
-        return(0, score_store)
-
-    def disco_depth_stats(uid_deets, global_disco_stats_dict, score_store):        
-        
-        anchor_chromo = uid_deets['anchor_chromo']
-        anchor_start = uid_deets['anchor_start']
-        anchor_stop = uid_deets['anchor_stop']
-        
-        other_chromo = uid_deets['other_chromo']
-        other_start = uid_deets['other_start']
-        other_stop = uid_deets['other_stop']
-        
-        score = otherside_dict[chromo][uid]['score']
-
-        rd_anchor_term, score_store = collect_stats(
-            anchor_chromo, anchor_start, 
-            anchor_stop, global_disco_stats_dict, "rd", score_store)
-                    
-        rd_other_term, score_store = collect_stats(
-            other_chromo, other_start, 
-            other_stop, global_disco_stats_dict, "rd", score_store)
-        
-        split_anchor_term, score_store = collect_stats(
-            anchor_chromo, anchor_start, 
-            anchor_stop, global_disco_stats_dict, "split", score_store)
-                
-        split_other_term, score_store = collect_stats(
-            other_chromo, other_start, 
-            other_stop, global_disco_stats_dict, "split", score_store)
-                
-        disco_anchor_term, score_store = collect_stats(
-            anchor_chromo, anchor_start, 
-            anchor_stop, global_disco_stats_dict, "disco", score_store)
-                
-        disco_other_term, score_store = collect_stats(
-            other_chromo, other_start, 
-            other_stop, global_disco_stats_dict, "disco", score_store)
-        
-        
-        relative_score = (rd_anchor_term * score * rd_other_term + 
-            split_anchor_term * score* split_other_term +
-            disco_anchor_term * score* disco_other_term)
-        
-        return(relative_score, score_store)
-        
     global_disco_stats_dict = calculate_global_disco_stats(each_sample)
     
     score_store = {'rd':{}, 'split':{}, 'disco':{}}
@@ -1814,6 +1821,8 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap):
         chromo_size = len(otherside_dict[chromo])
         pissct = 0
         for uid in otherside_dict[chromo]:
+            # print('otherside_dict[chromo][uid]')
+            # print(otherside_dict[chromo][uid])
             
             outline = ('chromo: {}, uid: {}, ct: {} out of {}').format(
                 chromo, uid, pissct, chromo_size)
@@ -1829,7 +1838,7 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap):
             contig_set = otherside_dict[chromo][uid]['contig']
             
             relative_score, score_store = disco_depth_stats(otherside_dict[chromo][uid],
-                        global_disco_stats_dict, score_store)
+                        global_disco_stats_dict, score, score_store)
             
             if relative_score > 0:
                 if chromo not in top_performer_dict:
@@ -1846,16 +1855,16 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap):
                         top_performer_dict[chromo][anchor_site]['uid'] = uid
                         print('with: ', top_performer_dict[chromo][anchor_site])
                         
-                        
                 if anchor_site not in top_performer_dict[chromo]:
                     top_performer_dict[chromo][anchor_site] = {'relative_score': relative_score, 'uid': uid}
 
-    
     top_performer_set = set()
     for chromo in top_performer_dict:
         for anchor_site in top_performer_dict[chromo]:
             uid = top_performer_dict[chromo][anchor_site]['uid']
             top_performer_set.add(uid)
+            print('top_performer_set')
+            print(uid)
     
     for uid in top_performer_set:
         for chromo in otherside_dict:
@@ -2820,7 +2829,7 @@ def meta_selection(sample, X, y, performance_dict, log_file):
 def model_selection(value_df_object):
         
     #TODO make into standard temp_dir 
-    log_file_name = ('model_selection_run.log')
+    log_file_name = ('{}{}_model_selection_run.log').format(output_dir, output_file)
     log_file = open(log_file_name, 'w')
     
     header = ('sample\tmodel\tgmean\tfval\tTP\tFP\tFN\tTN\tTime_elapsed\n')
@@ -2842,7 +2851,7 @@ def model_selection(value_df_object):
         
     log_file.close()
 
-    results_name = ('model_selection_best.log')
+    results_name = ('{}{}_model_selection_best.log').format(output_dir, output_file)
     results_file = open(results_name, 'w')
 
     rank_dict = {}
@@ -3039,8 +3048,7 @@ def model_train(value_df_object):
     return(False)
 
 
-def model_predict(value_df_object):
-    
+def model_predict(value_df_object):    
     model_name = args.model_object
     with open(model_name, 'rb') as fp:
         model = pickle.load(fp)
@@ -3053,7 +3061,7 @@ def model_predict(value_df_object):
             master_value_df = pickle.load(fp)
           
         try:
-            outfile_name = ('{}/{}_predicted_mge.gff').format(args.output_file, sample) 
+            outfile_name = ('{}/{}_predicted_mge.gff').format(final_output_dir, sample) 
             outfile = open(outfile_name, 'w')
                 
             outline = ('Loading {}...\n with {} events...').format(sample, len(master_value_df))
@@ -3069,9 +3077,8 @@ def model_predict(value_df_object):
             master_value_df['predict'] = y_pred
             master_value_df['confidence'] = y_pred_prob
             
-
-            
-            master_value_df.to_csv('C:/Gresham/tiny_projects/tiny_erisapfel/temp/predicted.csv')
+            csv_name = ('{}/{}_predicted_mge.csv').format(final_output_dir, sample)
+            master_value_df.to_csv(csv_name)
             
             for index, row in master_value_df.iterrows():
                 chromo, regions = index.split(':')
@@ -3088,7 +3095,7 @@ def model_predict(value_df_object):
                         
                 if process:                
                     outline = ('{chromo}\tmge\tmge_prediction\t{start}\t{stop}\t{predict}'
-                               '\t.\t.\t{name}; score={score}; predict={predict};'
+                               '\t.\t.\tID={name}; score={score}; predict={predict};'
                                'confidence={confidence}; exp={onehot}\n').format(
                                    chromo = chromo,
                                    start = start, stop = stop,
@@ -3109,8 +3116,9 @@ def model_predict(value_df_object):
 def calculate_score(value_df):
         
     #calc score
-    value_df['total_score'] = (value_df.sum(axis=1) - (value_df['length'] - value_df['onehot']))
-    
+    temp_df = value_df.drop(['length', 'onehot'], axis=1)
+    value_df['total_score'] = (temp_df.sum(axis=1))
+            
     for col_name in value_df.columns:        
         if col_name not in ['length', 'onehot']:
             
@@ -3160,11 +3168,8 @@ def value_log_file(sample, trace_dict, defined_dict, region_to_feature_dict):
                     for feature in trace_dict[chromo][region][read_type].keys():
                         feature_name = ('{}_{}').format(read_type, feature)
                         value_dict[uid][feature_name] = trace_dict[chromo][region][read_type][feature]
-                #print(value_dict[uid])
-                
-                if True:
-                # TODO uncomment
-                #if args.known_mge:
+                            
+                if args.known_mge:
                     if region in defined_dict[chromo]:
                         value_dict[uid]['onehot'] = int(defined_dict[chromo][region])
                     else:
@@ -3180,10 +3185,10 @@ def value_log_file(sample, trace_dict, defined_dict, region_to_feature_dict):
     value_df = value_df.fillna(0)
     
     value_df = calculate_score(value_df)
-    outfile_name = ('{}/{}_tea_edge_values.tab').format(final_output_dir, sample)
+    outfile_name = ('{}/{}_feature_values.tab').format(final_output_dir, sample)
     value_df.to_csv(outfile_name)
     
-    pickle_out = ('{}/{}_tea_values.p').format(final_output_dir, sample)
+    pickle_out = ('{}/{}_feature_values.p').format(final_output_dir, sample)
     print(pickle_out)
     pickle.dump(value_df, open(pickle_out, 'wb')) 
     
@@ -3540,9 +3545,7 @@ def build_edge_read_set(discordant_sam_file, split_sam_file):
 """ Step Three """
 if args.mge_file:
     """
-    Peak detector
-    1. load 'mpileup' files into dataframe pickles.    additional feature, filter regions of chromosome with large deletions
-        
+    #    
     """
     resource_dict = io_load()
     read_type_list = resource_dict['read_types']
@@ -4251,26 +4254,11 @@ if args.map_reads:
 if args.make_filter:
     
     if args.filter_gff:
-        if len(args.filter_gff) > 1:
-            for each_gff_file in args.filter_gff:
-                parse_filter_gff(each_gff_file)
-        else:
-            parse_filter_gff(args.filter_gff)
-        
-    if args.filter_tab:
-        anc_QC_list = []
-        
-        for each in args.filter_tab:
-            if '/' in each:
-                source_name = each.rsplit('/',1)[1]
-            else:
-                source_name = each
-            
-            anc_QC_list = parse_tab(each, anc_QC_list)
-                    
-        print('Filtering '+str(len(anc_QC_list)))
-        print(anc_QC_list)
-                    
+        gff_file = set(args.filter_gff)
+
+        for each_gff_file in args.filter_gff:
+            parse_filter_gff(each_gff_file)
+                            
     if args.filter_bed:        
         for each in args.filter_bed:
             if '/' in each:
@@ -4294,7 +4282,7 @@ if args.make_filter:
         ct = region_name_dict[each]
         outline = ('\t{}:\t{}').format(each,ct)
         print(outline)
-        
+                
     pickle_out = ("{}").format(args.filter_object)
     pickle.dump(filter_region_dict, open(pickle_out, 'wb'))
         
@@ -4516,7 +4504,8 @@ if args.find_breakpoints:
                ' -run_name {run_name}\n').format(
                    run_name = run_name)
     bash_file.write(outline)
-       
+    
+    
     outline = ('python erisapfel.py -localseq'
                ' -run_name {run_name}\n').format(
                    run_name = run_name)
@@ -4557,7 +4546,6 @@ if args.model_selection:
     mge_file_name = (args.input_file)
     
     value_df_object = mge_to_model_parser(mge_file_name)
-    
                     
     model_selection(value_df_object)
     
@@ -4568,11 +4556,14 @@ if args.model_train:
                     
     topmodel = model_train(value_df_object) 
     
-if args.model_predict:    
-    mge_file_name = (args.input_file)
+if args.model_predict:
+    resource_dict = io_load()        
+    sample = resource_dict['run_name']
     
-    value_df_object = mge_to_model_parser(mge_file_name)
-                    
+    feature_pickle = ('{}/{}_feature_values.p').format(final_output_dir, sample)
+    value_df_object = {}
+    value_df_object[sample] = feature_pickle
+                                
     topmodel = model_predict(value_df_object) 
     
 
