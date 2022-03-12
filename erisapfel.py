@@ -28,15 +28,18 @@ Version 1.1 (Snatch Hen) 01.19.2022
 Version 1.2 (Area Agenda) 02.23.2022
     _x_ ML model support for MGE prediction
         _x_ model selection
+    _x_ vcf format output (v1.2.2 - 03.12.20)
+        _x_ with gzip
+    
     
 Future versions:
-    _-_ Added 'find_breakpoints'
-        
+    ___ Added 'find_breakpoints'
+    ___ Add CLI score filter so lines aren't added to the gff and filtered from the vcf
 
 @author: Pieter Spealman ps163@nyu.edu
 """
 
-"""Requirements :
+"""Requirements:
 bwa/intel   0.7.17
 samtools    1.14
 bedtools    2.29.2
@@ -56,6 +59,7 @@ import numpy as np
 import json
 import re
 import time
+from datetime import date
 import scipy.stats as stats
 
 import warnings
@@ -452,6 +456,7 @@ def pickle_loader(file_name, runmode):
         file.close()
     
     if runmode == 'df':
+        print(file_name)
         object_file = pd.read_pickle(file_name)
     return(object_file)
 
@@ -950,21 +955,26 @@ def check_coverage(source, prefilter_object_name, contig_seq_dict):
 
     temp_filter_object = open(prefilter_object_name)
     
+    print(prefilter_object_name)
+    seq_set = set()
+    
     for line in temp_filter_object:
         if line[0] == '>' and not process:
-            eval_cov = float(line.rsplit('_',1)[1])
-            if eval_cov >= float(min_coverage):
-                    process=True
-                    seq_str=''
-                    node_name = source+'_'+str(int(eval_cov))
+            process=True
+            #node_name = source
                     
         if line[0]!= '>' and process:
-            seq_str += line.strip()
+            seq_set.add(line.strip())
+            process=False
             
     temp_filter_object.close()
 
-    if len(seq_str)>1:
-        contig_seq_dict[node_name]=seq_str
+    if len(seq_set)>0:
+        seq_str = ''
+        for seq in seq_set:
+            seq_str+=seq
+            
+        contig_seq_dict[source]=seq_str
             
     return(contig_seq_dict)    
 
@@ -1152,13 +1162,19 @@ def get_seq(seq_file_name):
     
     for line in seq_file:    
         if line[0] == '>':
-            seq_set.add(line.split('>')[1].strip())
+            line = line.split('>')[1].strip()
+            if '.' in line:
+                line = line.rsplit('.',1)[0]
+            
+            seq_set.add(line)
+            
             seq = ''
         
         else:
             seq+=line.strip()
     
     if len(seq_set) > 1:
+        print(seq_set)
         print('seq_file error: too many sequences')
         1/0
     
@@ -1781,10 +1797,33 @@ def disco_depth_stats(uid_deets, global_disco_stats_dict, score, score_store):
     
     return(relative_score, score_store)
     
-def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap):
+def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, fa_file, bam_file):
     '''
     Summarize hypotheses 
     '''
+    #vcf format requires a static header
+    today = date.today().strftime("%d_%m_%Y")
+    vcf_header = ('##fileformat=VCFv4.2\n'
+                  '##fileDate={today}\n'
+                  '##source=erisapfelv1.4\n'
+                  '##reference={fa_file}\n'
+                  '##ALT=<ID=SV,Description="Structural Variant">\n'
+                  '##INFO=<ID=AS,Number=1,Type=Float,Description="Absolute Score">\n'
+                  '##INFO=<ID=RF,Number=1,Type=Float,Description="Relative Score">\n'
+                  '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'
+                  '##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype Quality">\n'
+                  '##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read Depth">\n'
+                  '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{bam_file}\n').format(
+                      today=today, fa_file=fa_file, bam_file=bam_file)
+                      
+    gff_header = ('###fileDate={today}\n'
+                  '##source=erisapfelv1.4\n'
+                  '##reference={fa_file}\n').format(
+                      today=today, fa_file=fa_file)
+    
+    #while the vcf records are still handled by the vcf_set
+    vcf_set = set()
+    #while the vcf records are still handled by the vcf_set
     gff_set = set()                  
     otherside_dict = {}
         
@@ -1816,7 +1855,7 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap):
     
     score_store = {'rd':{}, 'split':{}, 'disco':{}}
     top_performer_dict = {}
-
+    
     for chromo in otherside_dict:
         chromo_size = len(otherside_dict[chromo])
         pissct = 0
@@ -1883,11 +1922,14 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap):
                     other_start = other_start,
                     other_stop = other_stop)
                 
-                contig = ''
-                for each in contig_set:
-                    outline = ('{};').format(each)
-                    contig += (outline)
-                contig = contig[:-1]
+                if len(contig_set) > 0:
+                    contig = ''
+                    for each in contig_set:
+                        outline = ('{};').format(each)
+                        contig += (outline)
+                    contig = contig[:-1]
+                else:
+                    contig = '<SV>'
 
                 process = False
                 if args.return_all:
@@ -1911,6 +1953,18 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap):
                                     
                     gff_set.add(gff_line)
                     
+                    vcf_line = ('{chromo}\t{pos}\t{uid}'
+                                '\tN\t{alt}\t60\tPASS\t{info}'
+                                '\tGT:GQ:DP\t.:.:{dp}\n').format(
+                                    chromo = anchor_chromo,
+                                    pos = anchor_start,
+                                    uid = uid,
+                                    info = otherside,
+                                    alt = contig,
+                                    dp = score)
+                                    
+                    vcf_set.add(vcf_line)
+                    
                     anchorside = ('{chromo}:{start}-{stop}').format(
                         chromo = anchor_chromo,
                         start = anchor_start,
@@ -1928,8 +1982,21 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap):
                                     contig = contig)
                     
                     gff_set.add(rev_gff_line)
+                    
+                    
+                    vcf_line = ('{chromo}\t{pos}\t0{uid}'
+                                '\tN\t{alt}\t60\tPASS\t{info}'
+                                '\tGT:GQ:DP\t.:.:{dp}\n').format(
+                                    chromo = other_chromo,
+                                    pos = other_start,
+                                    uid = uid,
+                                    info = anchorside,
+                                    alt = contig,
+                                    dp = score)
+                                    
+                    vcf_set.add(vcf_line)
             
-    return(gff_set)
+    return(gff_set, gff_header, vcf_set, vcf_header)
 
 def parse_msa_file(filename):
     '''
@@ -1955,6 +2022,9 @@ def parse_msa_file(filename):
         if line[0] == '>':
             name = (line.split('>')[1].split('_')[0].strip())
             hname = str(hash(name))
+            #score = (line.split('_')[1].strip())
+            
+            #sname = ('{}_{}').format(name, score)
             
             if seq != '':
                 msa_dict[hname] = seq
@@ -4330,6 +4400,7 @@ if args.build_sequence:
     fa_file = resource_dict['genome_fa']
     fastq_1 = resource_dict['fastq_1']
     fastq_2 = resource_dict['fastq_2']
+    bam_file = resource_dict['bam_file']
     
     uniuid_to_seq_dict, uniuid_to_phred_dict = io_load('fq')
         
@@ -4396,7 +4467,7 @@ if args.build_sequence:
             hypothesis_dict, anchor_contig_dict = parse_json(json_long_file_name, seq, hypothesis_dict, anchor_contig_dict)
             #gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict = parse_json(json_long_file_name, contig_seq_dict, gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict)
 
-    gff_set = summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap)
+    gff_set, gff_header, vcf_set, vcf_header = summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, fa_file, bam_file)
 
     resource_pickle_name = ('{}/hypothesis_dict.p').format(pickles_dir)
     with open(resource_pickle_name, 'wb') as file:
@@ -4405,12 +4476,31 @@ if args.build_sequence:
     gff_file_name = ('{}/{}_realigned.gff').format(final_output_dir, output_file)
     gff_file = open(gff_file_name,'w')    
     
+    gff_file.write(gff_header)
+    
     for each_gff in gff_set:
         gff_file.write(each_gff)
     
     gff_file.close()
+    
+    vcf_file_name = ('{}/{}_realigned.vcf').format(final_output_dir, output_file)
+    vcf_file = open(vcf_file_name,'w')    
+    
+    vcf_file.write(vcf_header)
+    
+    for each_vcf in vcf_set:
+        vcf_file.write(each_vcf)
+    
+    vcf_file.close()
+    
+    bashCommand = ('gzip {vcf_file} -k -c > {vcf_file}.gz').format(
+        vcf_file = vcf_file_name)
+    print(bashCommand)       
+    subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
             
-    outline = ('\t{} nodes realigned to {} regions.\n\n\tFor a complete representation refer to:\n\t\t{}').format(len(complete_qname_dict), len(gff_set), gff_file_name)
+    outline = ('\t{} nodes realigned to {} regions.\n\n\t'
+               'For a complete representation refer to:\n\t\t{} or {}').format(
+                   len(complete_qname_dict), len(gff_set), gff_file_name, vcf_file_name)
     print(outline)
     
 if args.separate_by_strand:
@@ -4564,7 +4654,4 @@ if args.model_predict:
     value_df_object = {}
     value_df_object[sample] = feature_pickle
                                 
-    topmodel = model_predict(value_df_object) 
-    
-
-                            
+    topmodel = model_predict(value_df_object)
