@@ -35,6 +35,7 @@ Version 1.2 (Area Agenda) 02.23.2022
 Future versions:
     ___ Added 'find_breakpoints'
     ___ Add CLI score filter so lines aren't added to the gff and filtered from the vcf
+    ___ Check contig reporting in gff, vcf
 
 @author: Pieter Spealman ps163@nyu.edu
 """
@@ -4473,7 +4474,7 @@ if args.build_sequence:
     with open(resource_pickle_name, 'wb') as file:
          pickle.dump(hypothesis_dict, file)
             
-    gff_file_name = ('{}/{}_realigned.gff').format(final_output_dir, output_file)
+    gff_file_name = ('{}/{}_SV_CNV.gff').format(final_output_dir, output_file)
     gff_file = open(gff_file_name,'w')    
     
     gff_file.write(gff_header)
@@ -4483,7 +4484,7 @@ if args.build_sequence:
     
     gff_file.close()
     
-    vcf_file_name = ('{}/{}_realigned.vcf').format(final_output_dir, output_file)
+    vcf_file_name = ('{}/{}_SV_CNV.vcf').format(final_output_dir, output_file)
     vcf_file = open(vcf_file_name,'w')    
     
     vcf_file.write(vcf_header)
@@ -4493,7 +4494,7 @@ if args.build_sequence:
     
     vcf_file.close()
     
-    bashCommand = ('gzip {vcf_file} -k -c > {vcf_file}.gz').format(
+    bashCommand = ('bgzip {vcf_file} -cf --index --index-name {vcf_file}.tbi > {vcf_file}.gz').format(
         vcf_file = vcf_file_name)
     print(bashCommand)       
     subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
@@ -4654,4 +4655,7 @@ if args.model_predict:
     value_df_object = {}
     value_df_object[sample] = feature_pickle
                                 
-    topmodel = model_predict(value_df_object)
+    topmodel = model_predict(value_df_object) 
+    
+
+                            
