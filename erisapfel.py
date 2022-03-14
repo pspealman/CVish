@@ -29,7 +29,7 @@ Version 1.2 (Area Agenda) 02.23.2022
     _x_ ML model support for MGE prediction
         _x_ model selection
     _x_ vcf format output (v1.2.2 - 03.12.20)
-        _x_ with gzip
+        _x_ with bgzip and tbi indexing
     
     
 Future versions:
@@ -4494,10 +4494,16 @@ if args.build_sequence:
     
     vcf_file.close()
     
-    bashCommand = ('bgzip {vcf_file} -cf --index --index-name {vcf_file}.gz.tbi > {vcf_file}.gz').format(
+    bashCommand = ('bgzip {vcf_file} -cf > {vcf_file}.gz').format(
         vcf_file = vcf_file_name)
     print(bashCommand)       
     subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
+    
+    bashCommand = ('tabix -p vcf {vcf_file}.gz').format(
+        vcf_file = vcf_file_name)
+    print(bashCommand)       
+    subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
+    
             
     outline = ('\t{} nodes realigned to {} regions.\n\n\t'
                'For a complete representation refer to:\n\t\t{} or {}').format(
