@@ -4494,7 +4494,7 @@ if args.build_sequence:
     
     vcf_file.close()
     
-    bashCommand = ('bgzip {vcf_file} -cf --index --index-name {vcf_file}.tbi > {vcf_file}.gz').format(
+    bashCommand = ('bgzip {vcf_file} -cf --index --index-name {vcf_file}.gz.tbi > {vcf_file}.gz').format(
         vcf_file = vcf_file_name)
     print(bashCommand)       
     subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
