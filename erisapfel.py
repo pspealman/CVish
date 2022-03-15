@@ -1159,27 +1159,52 @@ def build_trace(subz_df, suby_df, each_type, c_median, g_median):
                             
 def get_seq(seq_file_name):
     seq_file = open(seq_file_name)
-    seq_set = set()
     
-    for line in seq_file:    
+    #seq_file = open('C:/Gresham/tiny_projects/tiny_erisapfel/temp/test.txt')
+    seq_dict = {}
+    seq = False
+        
+    for line in seq_file:
         if line[0] == '>':
-            line = line.split('>')[1].strip()
-            if '.' in line:
-                line = line.rsplit('.',1)[0]
-            
-            seq_set.add(line)
+            if seq:
+                if seq not in seq_dict:
+                    seq_dict[seq] = 0
+                
+                seq_dict[seq] += 1
             
             seq = ''
         
-        else:
-            seq+=line.strip()
+        if line[0] != '>':
+            seq += line.strip()
+            
+    seq_file.close()
     
-    if len(seq_set) > 1:
-        print(seq_set)
-        print('seq_file error: too many sequences')
+    if seq not in seq_dict:
+        seq_dict[seq] = 0
+    
+    seq_dict[seq] += 1
+    
+    if len(seq_dict) > 1:
+        print(seq_file_name)
+        print(seq_dict)
         1/0
+                
+    max_seq = ''
+    max_score = 0
+    for seq in seq_dict:
+        seq_score = seq_dict[seq]
+        
+        if seq_score == max_score:
+            if len(seq) > len(max_seq):
+                max_seq = seq
+                        
+        if seq_score > max_score:
+            max_seq = seq
+            max_score = seq_score
     
-    return(seq)
+    #print('max_seq', max_seq)
+    
+    return(max_seq)
 
 
 def return_most_unique_read(read_nt_dict):
@@ -1798,24 +1823,50 @@ def disco_depth_stats(uid_deets, global_disco_stats_dict, score, score_store):
     
     return(relative_score, score_store)
     
-def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, fa_file, bam_file):
+def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict):
     '''
     Summarize hypotheses 
-    '''
+    '''    
+    fa_file = resource_dict['genome_fa']
+    bam_file = resource_dict['bam_file']
+    
+    chromo_size_p = resource_dict['chromo_size']
+    with open(chromo_size_p, 'rb') as fp:
+        chromo_size_dict = pickle.load(fp)
+        
+    chromo_list = list(chromo_size_dict.keys())
+    chromo_list.sort()
+    
+    chromo_size_str = ''
+    
+    for chromo in chromo_list:
+        chromo_size = chromo_size_dict[chromo]
+        
+        chromo_size = chromo_size.strip()
+        
+        outline = ('##contig=<ID={chromo},length={chromo_size}>\n').format(
+            chromo = chromo, chromo_size = chromo_size)
+        
+        chromo_size_str+=outline
+    
+    
     #vcf format requires a static header
     today = date.today().strftime("%d_%m_%Y")
     vcf_header = ('##fileformat=VCFv4.2\n'
                   '##fileDate={today}\n'
                   '##source=erisapfelv1.4\n'
                   '##reference={fa_file}\n'
+                  '{contig}'
                   '##ALT=<ID=SV,Description="Structural Variant">\n'
                   '##INFO=<ID=AS,Number=1,Type=Float,Description="Absolute Score">\n'
                   '##INFO=<ID=RF,Number=1,Type=Float,Description="Relative Score">\n'
+                  '##INFO=<ID=SVMETHOD,Number=1,Type=String,Description="Type of approach used to detect SV">\n'
+                  '##INFO=<ID=OTHERSIDE,Number=1,Type=String,Description="Coordinate of otherside of breakpoint">\n'
                   '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'
                   '##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype Quality">\n'
                   '##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read Depth">\n'
                   '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{bam_file}\n').format(
-                      today=today, fa_file=fa_file, bam_file=bam_file)
+                      today=today, fa_file=fa_file, bam_file=bam_file, contig = chromo_size_str)
                       
     gff_header = ('###fileDate={today}\n'
                   '##source=erisapfelv1.4\n'
@@ -1955,14 +2006,14 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, fa_file, bam_
                     gff_set.add(gff_line)
                     
                     vcf_line = ('{chromo}\t{pos}\t{uid}'
-                                '\tN\t{alt}\t60\tPASS\t{info}'
+                                '\tN\t{alt}\t60\tPASS\tSVMETHOD=erisapfel_1.2;OTHERSIDE={info}'
                                 '\tGT:GQ:DP\t.:.:{dp}\n').format(
                                     chromo = anchor_chromo,
                                     pos = anchor_start,
                                     uid = uid,
                                     info = otherside,
                                     alt = contig,
-                                    dp = score)
+                                    dp = int(score))
                                     
                     vcf_set.add(vcf_line)
                     
@@ -1984,16 +2035,15 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, fa_file, bam_
                     
                     gff_set.add(rev_gff_line)
                     
-                    
-                    vcf_line = ('{chromo}\t{pos}\t0{uid}'
-                                '\tN\t{alt}\t60\tPASS\t{info}'
+                    vcf_line = ('{chromo}\t{pos}\t{uid}'
+                                '\tN\t{alt}\t60\tPASS\tSVMETHOD=erisapfel_1.2;OTHERSIDE={info}'
                                 '\tGT:GQ:DP\t.:.:{dp}\n').format(
                                     chromo = other_chromo,
                                     pos = other_start,
                                     uid = uid,
                                     info = anchorside,
                                     alt = contig,
-                                    dp = score)
+                                    dp = int(score))
                                     
                     vcf_set.add(vcf_line)
             
@@ -4468,7 +4518,8 @@ if args.build_sequence:
             hypothesis_dict, anchor_contig_dict = parse_json(json_long_file_name, seq, hypothesis_dict, anchor_contig_dict)
             #gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict = parse_json(json_long_file_name, contig_seq_dict, gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict)
 
-    gff_set, gff_header, vcf_set, vcf_header = summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, fa_file, bam_file)
+    gff_set, gff_header, vcf_set, vcf_header = summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict)
+    
 
     resource_pickle_name = ('{}/hypothesis_dict.p').format(pickles_dir)
     with open(resource_pickle_name, 'wb') as file:
@@ -4494,7 +4545,12 @@ if args.build_sequence:
     
     vcf_file.close()
     
-    bashCommand = ('bgzip {vcf_file} -cf > {vcf_file}.gz').format(
+    bashCommand = ('bcftools sort {vcf_file} > {vcf_file}.sorted').format(
+        vcf_file = vcf_file_name)
+    print(bashCommand)       
+    subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
+    
+    bashCommand = ('bgzip {vcf_file}.sorted -cf > {vcf_file}.gz').format(
         vcf_file = vcf_file_name)
     print(bashCommand)       
     subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
@@ -4504,7 +4560,6 @@ if args.build_sequence:
     print(bashCommand)       
     subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
     
-            
     outline = ('\t{} nodes realigned to {} regions.\n\n\t'
                'For a complete representation refer to:\n\t\t{} or {}').format(
                    len(complete_qname_dict), len(gff_set), gff_file_name, vcf_file_name)
