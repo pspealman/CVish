@@ -30,6 +30,10 @@ Version 1.2 (Area Agenda) 02.23.2022
         _x_ model selection
     _x_ vcf format output (v1.2.2 - 03.12.20)
         _x_ with bgzip and tbi indexing
+
+Version 1.3 (Pedetentous Zonelet) 03.19.2022
+    _x_ Identify prediction bug
+    _x_ Correct gff/vcf float error
     
     
 Future versions:
@@ -448,7 +452,7 @@ else:
 if args.min_score:
     c_min_score = int(args.min_score)
 else:
-    c_min_score = 100
+    c_min_score = 10
 
 def pickle_loader(file_name, runmode):
     if runmode == 'dict':
@@ -1854,7 +1858,7 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
     today = date.today().strftime("%d_%m_%Y")
     vcf_header = ('##fileformat=VCFv4.2\n'
                   '##fileDate={today}\n'
-                  '##source=erisapfelv1.4\n'
+                  '##source=erisapfelv1.3\n'
                   '##reference={fa_file}\n'
                   '{contig}'
                   '##ALT=<ID=SV,Description="Structural Variant">\n'
@@ -1869,7 +1873,7 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
                       today=today, fa_file=fa_file, bam_file=bam_file, contig = chromo_size_str)
                       
     gff_header = ('###fileDate={today}\n'
-                  '##source=erisapfelv1.4\n'
+                  '##source=erisapfelv1.3\n'
                   '##reference={fa_file}\n').format(
                       today=today, fa_file=fa_file)
     
@@ -1999,7 +2003,7 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
                                     uid = uid,
                                     start = anchor_start,
                                     stop = anchor_stop,
-                                    score = score,
+                                    score = int(score),
                                     otherside = otherside,
                                     contig = contig)
                                     
@@ -2029,7 +2033,7 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
                                     uid = uid,
                                     start = other_start,
                                     stop = other_stop,
-                                    score = score,
+                                    score = int(score),
                                     anchorside = anchorside,
                                     contig = contig)
                     
