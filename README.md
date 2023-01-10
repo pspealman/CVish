@@ -1,7 +1,7 @@
 # erisapfel
  A split and discordant derived structural variant breakpoint identifier for evolved populations. 
 
-_Important note for NYU Prince users:
+_Important note for NYU HPC users:
  Load all necessary modules via:
 	 source module_load.sh_
 
