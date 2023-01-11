@@ -81,10 +81,10 @@ python erisapfel.py -depth -filter_bed <filter_bed_format_file> -run_name <outpu
 Sequencing artifacts can make identification of breakpoints difficult. By constructing a filter using a bed file generated using an ancestor (ie. a genetic background that lacks CNVs) these artifacts can be readily identified and removed before further analysis. 
 * Format:
 <!--
-python erisapfel.py -filter -filter_bed /scratch/ps163/erisapfel/filter_telomeres.bed -o ${sample_name}_filter.p
+python erisapfel.py -filter -filter_bed /scratch/ps163/erisapfel/filter_telomeres.bed --filter_object ${sample_name}_filter.p
 --->
 ```
-python erisapfel.py -filter -filter_bed <filter_bed_format_file> -o <sample_name>_filter.p
+python erisapfel.py -filter -filter_bed <filter_bed_format_file> --filter_object <sample_name>_filter.p
 ```
 <!--* Demo, filter constructed using both a gff and an ancestor bed file:
 ```
@@ -104,7 +104,7 @@ python erisapfel.py -map -run_name <output prefix>
 ```
 Optional: If filtering is used breakpoints that fall within filtered regions will not be propagated downstream.
 ```
-python erisapfel.py -map -run_name <output prefix> --load_filter <sample_name>_filter.p
+python erisapfel.py -map -run_name <output prefix>  --filter_object <sample_name>_filter.p
 ```
 
 ### -localseq
