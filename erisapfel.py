@@ -189,19 +189,30 @@ def generate_run_file():
         if args.filter_bed:
             filter_name = args.filter_bed[0]
             
+            outline = ('filter={filter_name}\n'
+                       'filterfile={filter_name}_filter.p\n').format(
+                           filter_name = filter_name)
+            outfile.write(outline)
+            
+            outline = ('python erisapfel.py -filter -filter_bed $filter --filter_object $filterfile\n')
+            outfile.write(outline)
+            
+            outline = ('python erisapfel.py -map -run_name $name --filter_object $filterfile\n')
+            outfile.write(outline)
+            
         if args.filter_gff:
             filter_name = args.filter_gff[0]
             
-        outline = ('filter={filter_name}\n'
-                   'filterfile={filter_name}_filter.p\n').format(
-                       filter_name = filter_name)
-        outfile.write(outline)
+            outline = ('filter={filter_name}\n'
+                       'filterfile={filter_name}_filter.p\n').format(
+                           filter_name = filter_name)
+            outfile.write(outline)
+            
+            outline = ('python erisapfel.py -filter -filter_gff $filter --filter_object $filterfile\n')
+            outfile.write(outline)
         
-        outline = ('python erisapfel.py -filter -filter_bed $filter --filter_object $filterfile\n')
-        outfile.write(outline)
-        
-        outline = ('python erisapfel.py -map -run_name $name --filter_object $filterfile\n')
-        outfile.write(outline)
+            outline = ('python erisapfel.py -map -run_name $name --filter_object $filterfile\n')
+            outfile.write(outline)
         
     else:        
         outline = ('python erisapfel.py -map -run_name $name\n')
