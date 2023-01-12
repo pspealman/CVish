@@ -70,7 +70,7 @@ import json
 import re
 import time
 from datetime import date
-import scipy.stats as stats
+#import scipy.stats as stats
 
 import warnings
 warnings.simplefilter("ignore")
@@ -2694,126 +2694,126 @@ def weighted_outlier(df, region):
     return(wo)
 
 
-def tea_stats(df_num, df_den, region):
-    num_cov = nan_inf_cleaner(stats.variation(np.array(df_num)))
+# def tea_stats(df_num, df_den, region):
+#     num_cov = nan_inf_cleaner(stats.variation(np.array(df_num)))
     
-    num_sum = df_num.sum()
+#     num_sum = df_num.sum()
     
-    num_wo = weighted_outlier(df_num, region)
+#     num_wo = weighted_outlier(df_num, region)
     
-    num_diff = max(df_num)-min(df_num)
-    num_entropy = nan_inf_cleaner(stats.entropy(np.array(df_num)))
+#     num_diff = max(df_num)-min(df_num)
+#     num_entropy = nan_inf_cleaner(stats.entropy(np.array(df_num)))
     
-    den_cov = nan_inf_cleaner(stats.variation(np.array(df_den)))
+#     den_cov = nan_inf_cleaner(stats.variation(np.array(df_den)))
     
-    den_sum = df_den.sum()
+#     den_sum = df_den.sum()
     
-    den_wo = weighted_outlier(df_den, region)
+#     den_wo = weighted_outlier(df_den, region)
     
-    den_diff = max(df_den)-min(df_den)
-    den_entropy = nan_inf_cleaner(stats.entropy(np.array(df_den)))
+#     den_diff = max(df_den)-min(df_den)
+#     den_entropy = nan_inf_cleaner(stats.entropy(np.array(df_den)))
     
-    cov = num_cov/max(den_cov,1)
-    rsum = num_sum/max(den_sum,1)
-    wo = num_wo/max(den_wo,1)
-    diff = num_diff/max(den_diff,1)
-    entropy = num_entropy/max(den_entropy,1)
+#     cov = num_cov/max(den_cov,1)
+#     rsum = num_sum/max(den_sum,1)
+#     wo = num_wo/max(den_wo,1)
+#     diff = num_diff/max(den_diff,1)
+#     entropy = num_entropy/max(den_entropy,1)
         
-    return(cov, rsum, wo, diff, entropy)
+#     return(cov, rsum, wo, diff, entropy)
 
-def tea_features(region, chromo, rd_mpileup_df, runmode):
+# def tea_features(region, chromo, rd_mpileup_df, runmode):
     
-    temp_dict = {}
+#     temp_dict = {}
     
-    if runmode == 'rd':
-        adjust = 300
-        length = max(region) - min(region) + 2*adjust
+#     if runmode == 'rd':
+#         adjust = 300
+#         length = max(region) - min(region) + 2*adjust
         
-        left_outside_start = min(region)-int(adjust)
-        left_outside_stop = min(region)
+#         left_outside_start = min(region)-int(adjust)
+#         left_outside_stop = min(region)
         
-        inside_start = min(region)  
-        inside_stop = max(region)
+#         inside_start = min(region)  
+#         inside_stop = max(region)
         
-        right_outside_start = max(region)  
-        right_outside_stop = max(region)+int(adjust)
+#         right_outside_start = max(region)  
+#         right_outside_stop = max(region)+int(adjust)
         
-        left_outside = calculate_over_frame(left_outside_start, left_outside_stop, chromo, rd_mpileup_df)
-        inside = calculate_over_frame(inside_start, inside_stop, chromo, rd_mpileup_df)
+#         left_outside = calculate_over_frame(left_outside_start, left_outside_stop, chromo, rd_mpileup_df)
+#         inside = calculate_over_frame(inside_start, inside_stop, chromo, rd_mpileup_df)
         
-        left_cov, left_sum, left_wo, left_diff, left_entropy = tea_stats(inside['ct'], left_outside['ct'], region)
+#         left_cov, left_sum, left_wo, left_diff, left_entropy = tea_stats(inside['ct'], left_outside['ct'], region)
     
-        right_outside = calculate_over_frame(right_outside_start, right_outside_stop, chromo, rd_mpileup_df)
-        #right_inside = calculate_over_frame(right_inside_start, right_inside_stop, chromo, rd_mpileup_df)
+#         right_outside = calculate_over_frame(right_outside_start, right_outside_stop, chromo, rd_mpileup_df)
+#         #right_inside = calculate_over_frame(right_inside_start, right_inside_stop, chromo, rd_mpileup_df)
         
-        right_cov, right_sum, right_wo, right_diff, right_entropy = tea_stats(inside['ct'], right_outside['ct'], region)
+#         right_cov, right_sum, right_wo, right_diff, right_entropy = tea_stats(inside['ct'], right_outside['ct'], region)
         
-        df_cov = (left_cov + right_cov)/length
-        df_sum = (left_sum + right_sum)/length
-        df_wo = (left_wo + right_wo)/length
-        df_diff = (left_diff + right_diff)/length
-        df_entropy = (left_entropy + right_entropy)/length
+#         df_cov = (left_cov + right_cov)/length
+#         df_sum = (left_sum + right_sum)/length
+#         df_wo = (left_wo + right_wo)/length
+#         df_diff = (left_diff + right_diff)/length
+#         df_entropy = (left_entropy + right_entropy)/length
     
-    if runmode == 'disco':
-        adjust = 300
+#     if runmode == 'disco':
+#         adjust = 300
         
-        left_outside_start = min(region)-int(adjust)
-        left_outside_stop = min(region)-75
-        left_inside_start = min(region)-75  
-        left_inside_stop = min(region)+int(adjust)
+#         left_outside_start = min(region)-int(adjust)
+#         left_outside_stop = min(region)-75
+#         left_inside_start = min(region)-75  
+#         left_inside_stop = min(region)+int(adjust)
         
-        right_inside_start = max(region)-int(adjust)
-        right_inside_stop = max(region)+75
-        right_outside_start = max(region)+75  
-        right_outside_stop = max(region)+int(adjust)
+#         right_inside_start = max(region)-int(adjust)
+#         right_inside_stop = max(region)+75
+#         right_outside_start = max(region)+75  
+#         right_outside_stop = max(region)+int(adjust)
     
-        left_outside = calculate_over_frame(left_outside_start, left_outside_stop, chromo, rd_mpileup_df)
-        left_inside = calculate_over_frame(left_inside_start, left_inside_stop, chromo, rd_mpileup_df)
+#         left_outside = calculate_over_frame(left_outside_start, left_outside_stop, chromo, rd_mpileup_df)
+#         left_inside = calculate_over_frame(left_inside_start, left_inside_stop, chromo, rd_mpileup_df)
         
-        left_cov, left_sum, left_wo, left_diff, left_entropy = tea_stats(left_inside['ct'], left_outside['ct'],region)
+#         left_cov, left_sum, left_wo, left_diff, left_entropy = tea_stats(left_inside['ct'], left_outside['ct'],region)
     
-        right_outside = calculate_over_frame(right_outside_start, right_outside_stop, chromo, rd_mpileup_df)
-        right_inside = calculate_over_frame(right_inside_start, right_inside_stop, chromo, rd_mpileup_df)
+#         right_outside = calculate_over_frame(right_outside_start, right_outside_stop, chromo, rd_mpileup_df)
+#         right_inside = calculate_over_frame(right_inside_start, right_inside_stop, chromo, rd_mpileup_df)
         
-        right_cov, right_sum, right_wo, right_diff, right_entropy = tea_stats(right_inside['ct'], right_outside['ct'], region)
+#         right_cov, right_sum, right_wo, right_diff, right_entropy = tea_stats(right_inside['ct'], right_outside['ct'], region)
         
-        df_cov = left_cov + right_cov
-        df_sum = left_sum + right_sum
-        df_wo = left_wo + right_wo
-        df_diff = left_diff + right_diff
-        df_entropy = left_entropy + right_entropy
+#         df_cov = left_cov + right_cov
+#         df_sum = left_sum + right_sum
+#         df_wo = left_wo + right_wo
+#         df_diff = left_diff + right_diff
+#         df_entropy = left_entropy + right_entropy
     
-    temp_dict = {'df_cov': df_cov, 'df_sum': df_sum,
-                 'df_wo': df_wo, 'df_diff': df_diff,
-                 'df_entropy': df_entropy}
+#     temp_dict = {'df_cov': df_cov, 'df_sum': df_sum,
+#                  'df_wo': df_wo, 'df_diff': df_diff,
+#                  'df_entropy': df_entropy}
     
-    return(temp_dict)
+#     return(temp_dict)
             
-def mge_trace_three_frames(mpileup_df, rd_mpileup_df, split_mpileup_df):
-    global mge_region_lookup_dict
+# def mge_trace_three_frames(mpileup_df, rd_mpileup_df, split_mpileup_df):
+#     global mge_region_lookup_dict
     
-    trace_dict = {}
+#     trace_dict = {}
     
-    for chromo in chromo_list:
-        if chromo in mge_region_lookup_dict:
-            sub_mg_set = mge_region_lookup_dict[chromo]
+#     for chromo in chromo_list:
+#         if chromo in mge_region_lookup_dict:
+#             sub_mg_set = mge_region_lookup_dict[chromo]
             
-            if chromo not in trace_dict:
-                trace_dict[chromo] = {}
+#             if chromo not in trace_dict:
+#                 trace_dict[chromo] = {}
                             
-            for region in sub_mg_set:            
-                if region in trace_dict[chromo]:
-                    print('Region error: ', region)
-                    1/0
+#             for region in sub_mg_set:            
+#                 if region in trace_dict[chromo]:
+#                     print('Region error: ', region)
+#                     1/0
                     
-                trace_dict[chromo][region] = {}
-                trace_dict[chromo][region] = {'rd': {}, 'disco': {}, 'split':{}}
+#                 trace_dict[chromo][region] = {}
+#                 trace_dict[chromo][region] = {'rd': {}, 'disco': {}, 'split':{}}
                 
-                trace_dict[chromo][region]['rd'] = tea_features(region, chromo, rd_mpileup_df, 'rd')
-                trace_dict[chromo][region]['disco'] = tea_features(region, chromo, mpileup_df, 'disco')
-                trace_dict[chromo][region]['split'] = tea_features(region, chromo, split_mpileup_df, 'disco')
+#                 trace_dict[chromo][region]['rd'] = tea_features(region, chromo, rd_mpileup_df, 'rd')
+#                 trace_dict[chromo][region]['disco'] = tea_features(region, chromo, mpileup_df, 'disco')
+#                 trace_dict[chromo][region]['split'] = tea_features(region, chromo, split_mpileup_df, 'disco')
                 
-    return(trace_dict)
+#     return(trace_dict)
 
 def populate_confusion_matrix(val, tval, rdict):
     if val == tval:
@@ -3321,29 +3321,29 @@ def model_predict(value_df_object):
             print(outline)
             1/0
                     
-def calculate_score(value_df):
+# def calculate_score(value_df):
         
-    #calc score
-    temp_df = value_df.drop(['length', 'onehot'], axis=1)
-    value_df['total_score'] = (temp_df.sum(axis=1))
+#     #calc score
+#     temp_df = value_df.drop(['length', 'onehot'], axis=1)
+#     value_df['total_score'] = (temp_df.sum(axis=1))
             
-    for col_name in value_df.columns:        
-        if col_name not in ['length', 'onehot']:
+#     for col_name in value_df.columns:        
+#         if col_name not in ['length', 'onehot']:
             
-            new_evl_name = col_name + '_eval'
-            new_zsc_name = col_name + '_zscore'
-            new_pval_name = col_name + '_zscore_pval'
-            g_median = value_df[col_name].mean()
-            g_std = value_df[col_name].std()
+#             new_evl_name = col_name + '_eval'
+#             new_zsc_name = col_name + '_zscore'
+#             new_pval_name = col_name + '_zscore_pval'
+#             g_median = value_df[col_name].mean()
+#             g_std = value_df[col_name].std()
             
-            eval_case = (value_df[col_name] > (g_median + g_std))
-            zscore = (value_df[col_name] - g_median) / max(g_std, 1)
+#             eval_case = (value_df[col_name] > (g_median + g_std))
+#             zscore = (value_df[col_name] - g_median) / max(g_std, 1)
             
-            value_df[new_evl_name] = eval_case
-            value_df[new_zsc_name] = zscore
-            value_df[new_pval_name] = stats.norm.sf(abs(zscore))
+#             value_df[new_evl_name] = eval_case
+#             value_df[new_zsc_name] = zscore
+#             value_df[new_pval_name] = stats.norm.sf(abs(zscore))
     
-    return(value_df)
+#     return(value_df)
 
     
 def value_log_file(sample, trace_dict, defined_dict, region_to_feature_dict):
