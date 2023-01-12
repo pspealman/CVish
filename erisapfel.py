@@ -175,7 +175,7 @@ def generate_run_file():
                        depth_filter_bed = args.depth_filter_bed)
         outfile.write(outline)
         
-        outline = ('python erisapfel.py -depth -filter_bed $depthfilter -run_name $name\n')
+        outline = ('python erisapfel.py -depth --depth_filter_bed $depthfilter -run_name $name\n')
         outfile.write(outline)
         
     else:
@@ -187,12 +187,12 @@ def generate_run_file():
         
     if args.filter_bed or args.filter_gff:
         if args.filter_bed:
-            filter_name = args.filter_bed
+            filter_name = args.filter_bed[0]
             
         if args.filter_gff:
-            filter_name = args.filter_gff
+            filter_name = args.filter_gff[0]
             
-        outline = ('filter={filter_name}\n',
+        outline = ('filter={filter_name}\n'
                    'filterfile={filter_name}_filter.p\n').format(
                        filter_name = filter_name)
         outfile.write(outline)
@@ -2495,16 +2495,16 @@ if args.depth_analysis:
     # soft_sam_file = resource_dict['soft_sam_file']
     read_type_list = resource_dict['read_types']
     
-    if not args.filter_bed:
+    if not args.depth_filter_bed:
         filter_by_bed = False
         
-    if args.filter_bed:
-        if len(args.filter_bed) == 0:
+    if args.depth_filter_bed:
+        if len(args.depth_filter_bed) == 0:
             filter_by_bed = False
         else:
             filter_by_bed = True
-            if len(args.filter_bed):
-                filter_bed = args.filter_bed[0]
+            if len(args.depth_filter_bed):
+                filter_bed = args.depth_filter_bed
                 resource_dict['depth_region_filter']=filter_bed
             else:
                 print('Please only specify a single bed file for filtering')
@@ -4808,4 +4808,7 @@ if args.model_predict:
     value_df_object = {}
     value_df_object[sample] = feature_pickle
                                 
-    topmodel = model_predict(value_df_object)
+    topmodel = model_predict(value_df_object) 
+    
+
+                            
