@@ -70,7 +70,7 @@ import json
 import re
 import time
 from datetime import date
-#import scipy.stats as stats
+import scipy.stats as stats
 
 import warnings
 warnings.simplefilter("ignore")
@@ -212,6 +212,10 @@ def generate_run_file():
     
     outfile.close()
     
+    if not args.no_run:
+        bash_command = ('bash {output_file}').format(output_file=outfile_name)
+        subprocess.run([bash_command],stderr=subprocess.STDOUT,shell=True)
+    
 def handle_outfile(p_output):
             
     if '/' in p_output:
@@ -336,6 +340,7 @@ parser.add_argument('-test',"--test",action='store_true')
 parser.add_argument('-view',"--view_resource")
 
 parser.add_argument('-run',"--run", action='store_true')
+parser.add_argument('-no_run',"--no_run", action='store_true')
 parser.add_argument('-run_name', '--run_name')
 
 parser.add_argument('-make',"--make", action='store_true')
@@ -391,7 +396,7 @@ parser.add_argument('-overlap_mask','--overlap_mask')
 parser.add_argument('-min_score','--min_score')
 
 parser.add_argument('-depth', '--depth_analysis', action='store_true')
-parser.add_argument('-depth_filter', '--depth_filter_bed', action='store_true')
+parser.add_argument('-depth_filter', '--depth_filter_bed')
 
 parser.add_argument('-read_type','--read_type_list', nargs='+')
 
@@ -2093,7 +2098,7 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
                     gff_set.add(gff_line)
                     
                     vcf_line = ('{chromo}\t{pos}\t{uid}'
-                                '\tN\t{alt}\t60\tPASS\tSVMETHOD=erisapfel_1.2;OTHERSIDE={info}'
+                                '\tN\t{alt}\t60\tPASS\tSVMETHOD=erisapfel_1.3;OTHERSIDE={info}'
                                 '\tGT:GQ:DP\t.:.:{dp}\n').format(
                                     chromo = anchor_chromo,
                                     pos = anchor_start,
@@ -2123,7 +2128,7 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
                     gff_set.add(rev_gff_line)
                     
                     vcf_line = ('{chromo}\t{pos}\t{uid}'
-                                '\tN\t{alt}\t60\tPASS\tSVMETHOD=erisapfel_1.2;OTHERSIDE={info}'
+                                '\tN\t{alt}\t60\tPASS\tSVMETHOD=erisapfel_1.3;OTHERSIDE={info}'
                                 '\tGT:GQ:DP\t.:.:{dp}\n').format(
                                     chromo = other_chromo,
                                     pos = other_start,
@@ -4803,7 +4808,4 @@ if args.model_predict:
     value_df_object = {}
     value_df_object[sample] = feature_pickle
                                 
-    topmodel = model_predict(value_df_object) 
-    
-
-                            
+    topmodel = model_predict(value_df_object)
