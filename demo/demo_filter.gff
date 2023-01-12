@@ -1,0 +1,4 @@
+NC_001224.1	RefSeq	region	0	100000	.	.	.	ID=Mitochondrial_genome
+NC_001144.5	Refseq	region	448650	491000	.	.	.	ID=rRNA
+NC_001140.6	RefSeq	region	0	5505	.	.	.	ID=TEL08L;telomere
+NC_001140.6	RefSeq	region	556105	562643	.	.	.	ID=TEL08R;telomere
