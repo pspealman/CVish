@@ -35,7 +35,12 @@ Version 1.3 (Pedetentous Zonelet) 03.19.2022
     _x_ Identify prediction bug
     _x_ Correct gff/vcf float error
     
-    
+
+Version 1.3.1 (Scandal Oral) 01.10.2023
+    _x_ -run command for complete pipeline execution
+    _!_ update demo()
+    _!_ update test()
+
 Future versions:
     ___ Added 'find_breakpoints'
     ___ Add CLI score filter so lines aren't added to the gff and filtered from the vcf
@@ -126,13 +131,87 @@ def demo():
     '')
     print(monolog)
 
-#chromo_list = ['NC_001135.5']
-#chromo_list = ['NC_001135.5', 'NC_001143.9']
-#chromo_list = ['NC_001133.9','NC_001134.8','NC_001141.2','NC_001135.5', 'NC_001143.9']
-#
-#chromo_list = ['NC_001133.9','NC_001134.8','NC_001135.5','NC_001136.10','NC_001137.3','NC_001138.5','NC_001139.9','NC_001140.6', 
-#'NC_001141.2','NC_001142.9','NC_001143.9','NC_001144.5','NC_001145.3','NC_001146.8','NC_001147.6','NC_001148.4']
-
+def generate_run_file():
+    outfile_name = ('run_erisapfel_{}.sh').format(args.run_name)
+    outfile = open(outfile_name,'w')
+    print('Generating shell file ... ', outfile_name)
+    
+    if not args.fa_file:
+        print('Reference FASTA file required. Use: -fa <path>')
+        
+    if (not args.fastq_1) or (not args.fastq_2):
+        print('Paired FASTG files required. Use: -fastq_1 <path> -fastq_2 <path>')
+    
+    if not args.run_name:
+        print('Each run requires a unique run name. Use -run_name <name>\n')
+    
+    if not args.depth_filter_bed:
+        print('It is advised to use a filter bed for the depth function so as\n' 
+              'to remove known copy number variable regions such as the rDNA locus.\n'
+              'Use --depth_filter_bed <path>')
+        
+    if not args.filter_bed or not args.filter_gff:
+        print('Known loci with low sequence complexity or mulitple similar regions\n' 
+              'such as transposons and telomeres can be filtered out using the \n'
+              ' --filter_bed <path>\n'
+              'or\n'
+              ' --filter_gff <path>')
+    
+    outline = ('reffa={ref_fa}\n'
+               'fastq1={fastq_1}\n'
+               'fastq2={fastq_2}\n'
+               'name={name}\n').format(
+                   ref_fa = args.fa_file,
+                   fastq_1 = args.fastq_1,
+                   fastq_2 = args.fastq_2,
+                   name = args.run_name)
+    outfile.write(outline)
+    
+    outline = ('python erisapfel.py -make -fa $reffa -fastq_1 $fastq1 -fastq_2 $fastq2 -run_name $name\n')
+    outfile.write(outline)
+    
+    if args.depth_filter_bed:
+        outline = ('depthfilter={depth_filter_bed}\n').format(
+                       depth_filter_bed = args.depth_filter_bed)
+        outfile.write(outline)
+        
+        outline = ('python erisapfel.py -depth -filter_bed $depthfilter -run_name $name\n')
+        outfile.write(outline)
+        
+    else:
+        outline = ('python erisapfel.py -depth -run_name $name\n')
+        outfile.write(outline)
+        
+    outline = ('python erisapfel.py -peaks -run_name $name\n')
+    outfile.write(outline)
+        
+    if args.filter_bed or args.filter_gff:
+        if args.filter_bed:
+            filter_name = args.filter_bed
+            
+        if args.filter_gff:
+            filter_name = args.filter_gff
+            
+        outline = ('filter={filter_name}\n',
+                   'filterfile={filter_name}_filter.p\n').format(
+                       filter_name = filter_name)
+        outfile.write(outline)
+        
+        outline = ('python erisapfel.py -filter -filter_bed $filter --filter_object $filterfile\n')
+        outfile.write(outline)
+        
+        outline = ('python erisapfel.py -map -run_name $name --filter_object $filterfile\n')
+        outfile.write(outline)
+        
+    else:        
+        outline = ('python erisapfel.py -map -run_name $name\n')
+        outfile.write(outline)
+        
+    outline = ('python erisapfel.py -localseq -run_name $name\n')
+    outfile.write(outline)
+    
+    outfile.close()
+    
 def handle_outfile(p_output):
             
     if '/' in p_output:
@@ -256,6 +335,7 @@ parser.add_argument('-demo',"--demo",action='store_true')
 parser.add_argument('-test',"--test",action='store_true')
 parser.add_argument('-view',"--view_resource")
 
+parser.add_argument('-run',"--run", action='store_true')
 parser.add_argument('-run_name', '--run_name')
 
 parser.add_argument('-make',"--make", action='store_true')
@@ -311,6 +391,7 @@ parser.add_argument('-overlap_mask','--overlap_mask')
 parser.add_argument('-min_score','--min_score')
 
 parser.add_argument('-depth', '--depth_analysis', action='store_true')
+parser.add_argument('-depth_filter', '--depth_filter_bed', action='store_true')
 
 parser.add_argument('-read_type','--read_type_list', nargs='+')
 
@@ -366,6 +447,8 @@ if args.view_resource:
         print('key: ', key)
         print('value: ', value)
         
+if args.run:
+    generate_run_file()
         
 ''' '''        
 filter_region_dict = {}
