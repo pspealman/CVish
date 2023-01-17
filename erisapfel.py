@@ -42,7 +42,6 @@ Version 1.3.1 (Scandal Oral) 01.10.2023
     _!_ update test()
 
 Future versions:
-    ___ Added 'find_breakpoints'
     ___ Add CLI score filter so lines aren't added to the gff and filtered from the vcf
     ___ Check contig reporting in gff, vcf
 
@@ -70,7 +69,7 @@ import json
 import re
 import time
 from datetime import date
-import scipy.stats as stats
+#import scipy.stats as stats
 
 import warnings
 warnings.simplefilter("ignore")
@@ -150,7 +149,7 @@ def generate_run_file():
               'to remove known copy number variable regions such as the rDNA locus.\n'
               'Use --depth_filter_bed <path>')
         
-    if not args.filter_bed or not args.filter_gff:
+    if not args.filter_bed and not args.filter_gff:
         print('Known loci with low sequence complexity or mulitple similar regions\n' 
               'such as transposons and telomeres can be filtered out using the \n'
               ' --filter_bed <path>\n'
@@ -167,7 +166,9 @@ def generate_run_file():
                    name = args.run_name)
     outfile.write(outline)
     
-    outline = ('python erisapfel.py -make -fa $reffa -fastq_1 $fastq1 -fastq_2 $fastq2 -run_name $name\n')
+    outline = ('echo "Starting run..."\n'
+               '\tRunning -make\n'
+               'python erisapfel.py -make -fa $reffa -fastq_1 $fastq1 -fastq_2 $fastq2 -run_name $name\n')
     outfile.write(outline)
     
     if args.depth_filter_bed:
@@ -175,14 +176,17 @@ def generate_run_file():
                        depth_filter_bed = args.depth_filter_bed)
         outfile.write(outline)
         
-        outline = ('python erisapfel.py -depth --depth_filter_bed $depthfilter -run_name $name\n')
+        outline = ('\tRunning -depth\n'
+                   'python erisapfel.py -depth --depth_filter_bed $depthfilter -run_name $name\n')
         outfile.write(outline)
         
     else:
-        outline = ('python erisapfel.py -depth -run_name $name\n')
+        outline = ('\tRunning -depth\n'
+                   'python erisapfel.py -depth -run_name $name\n')
         outfile.write(outline)
         
-    outline = ('python erisapfel.py -peaks -run_name $name\n')
+    outline = ('\tRunning -peaks\n'
+               'python erisapfel.py -peaks -run_name $name\n')
     outfile.write(outline)
         
     if args.filter_bed or args.filter_gff:
@@ -194,10 +198,12 @@ def generate_run_file():
                            filter_name = filter_name)
             outfile.write(outline)
             
-            outline = ('python erisapfel.py -filter -filter_bed $filter --filter_object $filterfile\n')
+            outline = ('\tRunning -filter\n'
+                       'python erisapfel.py -filter -filter_bed $filter --filter_object $filterfile\n')
             outfile.write(outline)
             
-            outline = ('python erisapfel.py -map -run_name $name --filter_object $filterfile\n')
+            outline = ('\tRunning -map\n'
+                       'python erisapfel.py -map -run_name $name --filter_object $filterfile\n')
             outfile.write(outline)
             
         if args.filter_gff:
@@ -208,17 +214,21 @@ def generate_run_file():
                            filter_name = filter_name)
             outfile.write(outline)
             
-            outline = ('python erisapfel.py -filter -filter_gff $filter --filter_object $filterfile\n')
+            outline = ('\tRunning -filter\n'
+                       'python erisapfel.py -filter -filter_gff $filter --filter_object $filterfile\n')
             outfile.write(outline)
         
-            outline = ('python erisapfel.py -map -run_name $name --filter_object $filterfile\n')
+            outline = ('\tRunning -map\n'
+                       'python erisapfel.py -map -run_name $name --filter_object $filterfile\n')
             outfile.write(outline)
         
     else:        
-        outline = ('python erisapfel.py -map -run_name $name\n')
+        outline = ('\tRunning -map\n'
+                   'python erisapfel.py -map -run_name $name\n')
         outfile.write(outline)
         
-    outline = ('python erisapfel.py -localseq -run_name $name\n')
+    outline = ('\tRunning -localseq\n'
+               'python erisapfel.py -localseq -run_name $name\n')
     outfile.write(outline)
     
     outfile.close()
