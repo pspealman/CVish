@@ -1,0 +1,11 @@
+#!/bin/bash
+#
+#SBATCH --verbose
+#SBATCH --job-name=ERISAPFEL
+#SBATCH --output=eris_%j.out
+#SBATCH --error=eris_%j.err
+#SBATCH --time=24:00:00
+#SBATCH --nodes=1
+#SBATCH --mem=50GB
+#SBATCH --mail-type=BEGIN,END,FAIL,TIME_LIMIT
+
