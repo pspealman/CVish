@@ -4,40 +4,9 @@ erisapfel - "apple of eris, goddess of discord"
 # Purpose: Uses split and discordant reads to identify genomic breakpoints
 # further processing is used to extract context and sequence.
 
-#change log
-(Initial Release - Public Beta: Rider Theory)
-
-# 12.13.2021
-Version 1.0 (Write Reflection)
-    Change log
-    _x_ 'gff' error
-    _x_ updated requirement list
-    _x_ corrected RPKM
-
-Version 1.1 (Snatch Hen) 01.19.2022
-    _x_ mkdir error
-    _x_ gzip file handling in subfolders
-    _x_ -filter argument on depth command now optional
-    _x_ corrected module integration
-    _x_ removed soft reads 
-    _x_ Mobile genetic element (MGE) mapping
-    _x_ Added 'separate_by_strand' option
-        This seperates reads into new sam/bam files based on strand identificaiton.
-        Visualization option
-        
-Version 1.2 (Area Agenda) 02.23.2022
-    _x_ ML model support for MGE prediction
-        _x_ model selection
-    _x_ vcf format output (v1.2.2 - 03.12.20)
-        _x_ with bgzip and tbi indexing
-
-Version 1.3 (Pedetentous Zonelet) 03.19.2022
-    _x_ Identify prediction bug
-    _x_ Correct gff/vcf float error
-    
-
 Version 1.3.1 (Scandal Oral) 01.10.2023
     _x_ -run command for complete pipeline execution
+    _x_ -sbatch argument, -module argument
     _!_ update demo()
     _!_ update test()
 
@@ -135,6 +104,16 @@ def generate_run_file():
     outfile = open(outfile_name,'w')
     print('Generating shell file ... ', outfile_name)
     
+    if args.sbatch_filename:
+        sbatch_file = open(args.sbatch_filename)
+        
+        outfile.write(sbatch_file.read())
+        
+    if args.module_filename:
+        module_file = open(args.module_filename)
+        
+        outfile.write(module_file.read())
+    
     if not args.fa_file:
         print('Reference FASTA file required. Use: -fa <path>')
         
@@ -167,7 +146,7 @@ def generate_run_file():
     outfile.write(outline)
     
     outline = ('echo "Starting run..."\n'
-               '\tRunning -make\n'
+               '\techo"Running -make"\n'
                'python erisapfel.py -make -fa $reffa -fastq_1 $fastq1 -fastq_2 $fastq2 -run_name $name\n')
     outfile.write(outline)
     
@@ -176,16 +155,16 @@ def generate_run_file():
                        depth_filter_bed = args.depth_filter_bed)
         outfile.write(outline)
         
-        outline = ('\tRunning -depth\n'
+        outline = ('\techo "Running -depth"\n'
                    'python erisapfel.py -depth --depth_filter_bed $depthfilter -run_name $name\n')
         outfile.write(outline)
         
     else:
-        outline = ('\tRunning -depth\n'
+        outline = ('\techo "Running -depth"\n'
                    'python erisapfel.py -depth -run_name $name\n')
         outfile.write(outline)
         
-    outline = ('\tRunning -peaks\n'
+    outline = ('\techo "Running -peaks"\n'
                'python erisapfel.py -peaks -run_name $name\n')
     outfile.write(outline)
         
@@ -198,11 +177,11 @@ def generate_run_file():
                            filter_name = filter_name)
             outfile.write(outline)
             
-            outline = ('\tRunning -filter\n'
+            outline = ('\techo "Running -filter"\n'
                        'python erisapfel.py -filter -filter_bed $filter --filter_object $filterfile\n')
             outfile.write(outline)
             
-            outline = ('\tRunning -map\n'
+            outline = ('\techo "Running -map"\n'
                        'python erisapfel.py -map -run_name $name --filter_object $filterfile\n')
             outfile.write(outline)
             
@@ -214,20 +193,20 @@ def generate_run_file():
                            filter_name = filter_name)
             outfile.write(outline)
             
-            outline = ('\tRunning -filter\n'
+            outline = ('\techo "Running -filter"\n'
                        'python erisapfel.py -filter -filter_gff $filter --filter_object $filterfile\n')
             outfile.write(outline)
         
-            outline = ('\tRunning -map\n'
+            outline = ('\techo "Running -map"\n'
                        'python erisapfel.py -map -run_name $name --filter_object $filterfile\n')
             outfile.write(outline)
         
     else:        
-        outline = ('\tRunning -map\n'
+        outline = ('\techo "Running -map"\n'
                    'python erisapfel.py -map -run_name $name\n')
         outfile.write(outline)
         
-    outline = ('\tRunning -localseq\n'
+    outline = ('\techo "Running -localseq"\n'
                'python erisapfel.py -localseq -run_name $name\n')
     outfile.write(outline)
     
@@ -361,6 +340,8 @@ parser.add_argument('-test',"--test",action='store_true')
 parser.add_argument('-view',"--view_resource")
 
 parser.add_argument('-run',"--run", action='store_true')
+parser.add_argument('-sbatch', '--sbatch_filename')
+parser.add_argument('-module', '--module_filename')
 parser.add_argument('-no_run',"--no_run", action='store_true')
 parser.add_argument('-run_name', '--run_name')
 
@@ -2585,12 +2566,15 @@ if args.peaks:
     1. load 'mpileup' files into dataframe pickles.    additional feature, filter regions of chromosome with large deletions
         
     """
+    print('loading pickles')
     resource_dict = io_load()
     read_type_list = resource_dict['read_types']
     
     each_sample = resource_dict['run_name']
     
     chromo_size_p = pickle_loader(resource_dict['chromo_size'], 'dict')
+    
+    print('setting variables')
     
     chromo_list = []
     for chromo in chromo_size_p:
@@ -2614,6 +2598,9 @@ if args.peaks:
     file_name_lookup = []
     depth_dict = {}
     # chromo_depth_dict = {}
+    
+    print(resource_dict['read_types'])
+    print(read_type_list)
     
     for each_type in read_type_list:
         print('Processing ', each_type)
