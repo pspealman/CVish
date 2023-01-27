@@ -4,9 +4,42 @@ erisapfel - "apple of eris, goddess of discord"
 # Purpose: Uses split and discordant reads to identify genomic breakpoints
 # further processing is used to extract context and sequence.
 
+#change log
+(Initial Release - Public Beta: Rider Theory)
+
+# 12.13.2021
+Version 1.0 (Write Reflection)
+    Change log
+    _x_ 'gff' error
+    _x_ updated requirement list
+    _x_ corrected RPKM
+
+Version 1.1 (Snatch Hen) 01.19.2022
+    _x_ mkdir error
+    _x_ gzip file handling in subfolders
+    _x_ -filter argument on depth command now optional
+    _x_ corrected module integration
+    _x_ removed soft reads 
+    _x_ Mobile genetic element (MGE) mapping
+    _x_ Added 'separate_by_strand' option
+        This seperates reads into new sam/bam files based on strand identificaiton.
+        Visualization option
+        
+Version 1.2 (Area Agenda) 02.23.2022
+    _x_ ML model support for MGE prediction
+        _x_ model selection
+    _x_ vcf format output (v1.2.2 - 03.12.20)
+        _x_ with bgzip and tbi indexing
+
+Version 1.3 (Pedetentous Zonelet) 03.19.2022
+    _x_ Identify prediction bug
+    _x_ Correct gff/vcf float error
+    
+
 Version 1.3.1 (Scandal Oral) 01.10.2023
     _x_ -run command for complete pipeline execution
-    _x_ -sbatch argument, -module argument
+    _!_ -sbatch command and -module command
+    _x_ massive optimization on mapping
     _!_ update demo()
     _!_ update test()
 
@@ -21,7 +54,6 @@ Future versions:
 bwa/intel   0.7.17
 samtools    1.14
 bedtools    2.29.2
-velvet      1.2.10
 blast+      2.11.0
 samblaster  0.1.26
 mafft       7.475
@@ -146,7 +178,7 @@ def generate_run_file():
     outfile.write(outline)
     
     outline = ('echo "Starting run..."\n'
-               '\techo"Running -make"\n'
+               '\techo "Running -make"\n'
                'python erisapfel.py -make -fa $reffa -fastq_1 $fastq1 -fastq_2 $fastq2 -run_name $name\n')
     outfile.write(outline)
     
@@ -213,8 +245,13 @@ def generate_run_file():
     outfile.close()
     
     if not args.no_run:
-        bash_command = ('bash {output_file}').format(output_file=outfile_name)
-        subprocess.run([bash_command],stderr=subprocess.STDOUT,shell=True)
+        
+        
+        if args.sbatch_filename:
+            outline = ('Beginning sbatch run: {}').format(outfile_name)
+            print (outline)
+            bash_command = ('sbatch {output_file}').format(output_file=outfile_name)
+            subprocess.run([bash_command],stderr=subprocess.STDOUT,shell=True)
     
 def handle_outfile(p_output):
             
@@ -262,22 +299,22 @@ def io_make(runmode='resource'):
         
         resource_file.close()
         
-    if runmode == 'ml':
-        ml_file_name = ('{}/ml_hypo.tab').format(temp_dir)
-        ml_file = open(ml_file_name, 'w')
+    # if runmode == 'ml':
+    #     ml_file_name = ('{}/ml_hypo.tab').format(temp_dir)
+    #     ml_file = open(ml_file_name, 'w')
 
-        for cat, val in ml_hypo_dict.items():                
-            outline = ('{}\t{}\n').format(cat,val)
-            ml_file.write(outline)
-        ml_file.close()
+    #     for cat, val in ml_hypo_dict.items():                
+    #         outline = ('{}\t{}\n').format(cat,val)
+    #         ml_file.write(outline)
+    #     ml_file.close()
         
-        ml_file_name = ('{}/ml_loci.tab').format(temp_dir)
-        ml_file = open(ml_file_name, 'w')
+    #     ml_file_name = ('{}/ml_loci.tab').format(temp_dir)
+    #     ml_file = open(ml_file_name, 'w')
 
-        for cat, val in ml_loci_dict.items():                
-            outline = ('{}\t{}\n').format(cat,val)
-            ml_file.write(outline)
-        ml_file.close()
+    #     for cat, val in ml_loci_dict.items():                
+    #         outline = ('{}\t{}\n').format(cat,val)
+    #         ml_file.write(outline)
+    #     ml_file.close()
                      
 def test():
     #TODO make accurate for latest version
@@ -456,6 +493,7 @@ if args.view_resource:
         
 if args.run:
     generate_run_file()
+    
         
 ''' '''        
 filter_region_dict = {}
@@ -599,17 +637,6 @@ def io_load(runmode='resource'):
             
         return(resource_dict) 
         
-    if runmode == 'ml':
-        ml_pickle_name = ('{}/ml_hypo.p').format(temp_dir) 
-        with open(ml_pickle_name, 'rb') as ml_file:
-            ml_hypo_dict = pickle.load(ml_file)
-
-        ml_pickle_name = ('{}/ml_loci.p').format(temp_dir) 
-        with open(ml_pickle_name, 'rb') as ml_file:
-            ml_loci_dict = pickle.load(ml_file)
-            
-        return(ml_hypo_dict, ml_loci_dict) 
-        
     if runmode == 'fq':
         pickle_in = ("{}/uniuid_to_seq_dict.p").format(pickles_dir)
         with open(pickle_in, 'rb') as fq_file:
@@ -719,9 +746,32 @@ def parse_cigar(cigar, run_mode):
 def make_fasta(temp_split_seq_file_name, hypo, qname_list):
     temp_split_seq_file = open(temp_split_seq_file_name, 'w')
         
+    
+    preid_set = set()
+    
     for qname in qname_list:
+        print(qname)
+        
+        preid = qname.split('_')[0]
+        if preid not in preid_set:
+            print(preid)
+            print(preid_set)
+            preid_set.add(preid)
+            
+        if 'disco' in qname:
+            bug_report = open('/scratch/ps163//erisapfel/bug_report.txt','a')
+            
+            outline = ('disco qname:{}\n').format(qname)
+            bug_report.write(outline)
+            bug_report.close()
+            
+            print(outline)
+            
+            1/0
+        
         if qname.count('_') == 1:
             qname = qname.split('_')[1]
+            
         else:
             #split_NB501157:106:HKFYTBGX2:4:11504:6476:10198_2.2
             preid, midid, postid = qname.split('_')
@@ -733,12 +783,9 @@ def make_fasta(temp_split_seq_file_name, hypo, qname_list):
             outline = ('>{}\n{}\n').format(qname,seq)
             temp_split_seq_file.write(outline) 
             
-        else:    
-            print(uniuid_to_seq_dict.keys())
-            print(qname)
-            1/0
-            
     temp_split_seq_file.close()
+    
+    print(preid_set)
     
 def degzip(full_name, file_name, pre_dir=''):
     # a lot of this is to ensure that the original fastq is left undisturbed
@@ -769,6 +816,8 @@ def parse_fastq(fastq_full_name, series_number, qname_lookup, uniuid_to_seq_dict
     outline = ('Parsing {}, using {}').format(fastq_full_name, series_number)
     print(outline)
     
+    unfiltered_fastq_dict = {}
+    
     if '/' in fastq_full_name:
         pre_dir, fastq_file_name = handle_outfile(fastq_full_name)
         
@@ -788,70 +837,62 @@ def parse_fastq(fastq_full_name, series_number, qname_lookup, uniuid_to_seq_dict
             fastq_file_name = fastq_full_name
     
     fq_file = open(fastq_file_name)
-    line_ct = 10
+    line_ct = 0
+    
+    read_ct = 0
+    hit_ct = 0
     
     for line in fq_file:
         line = line.strip()
+        
+        if (line[0] == '@') and (line_ct == 0):
+            read_ct += 1
+            
+            inline_qname = line.split('@')[1].split(' ')[0]
+            #query_qname = line.split('@')[1].split(' ')[0] + series_number
+            
+            unfiltered_fastq_dict[inline_qname] = {} 
+                           
+            if (read_ct % 100000) == 0:
+                outline = ('{} reads processed').format(read_ct)
+                print(outline)
+                                        
+        if line_ct==1:
+            unfiltered_fastq_dict[inline_qname]['seq'] = line
+            
+        if line_ct==3:
+            unfiltered_fastq_dict[inline_qname]['phred'] = line
+
         line_ct += 1
         
-        if line[0]=='@':
-            inline_qname = line.split('@')[1].split(' ')[0]
-            query_qname = line.split('@')[1].split(' ')[0] + series_number
-            if (inline_qname in qname_lookup) and (query_qname not in uniuid_to_seq_dict):
-                line_ct = 0
-            else:
-                line_ct = 10
-                
-        if line_ct==1:            
-            if query_qname in uniuid_to_seq_dict:
-                print('seq collision', query_qname, uniuid_to_seq_dict[query_qname])
-                1/0
-            else:
-                uniuid_to_seq_dict[query_qname] = line
-
-                    
-        if line_ct==3:
-            if query_qname in uniuid_to_phred_dict:
-                print('phred collision', query_qname, uniuid_to_phred_dict[query_qname])
-                1/0
-            else:
-                uniuid_to_phred_dict[query_qname] = line
-
+        if line_ct >= 4:
+            line_ct = 0
+            
     fq_file.close()
+    
+    for inline_qname in qname_lookup:
+        if inline_qname in unfiltered_fastq_dict:
+        
+            if ('seq' not in unfiltered_fastq_dict[inline_qname]):
+                print(inline_qname, 'seq failure')
+                1/0
+                
+            if ('phred' not in unfiltered_fastq_dict[inline_qname]):
+                print(inline_qname, 'phred failure')
+                1/0
+                
+            #
+            query_qname = inline_qname + series_number
+            uniuid_to_seq_dict[query_qname] = unfiltered_fastq_dict[inline_qname]['seq']
+            uniuid_to_phred_dict[query_qname] = unfiltered_fastq_dict[inline_qname]['phred']
+            
+            hit_ct+=1
+            
+            if (hit_ct % 1000) == 0:
+                 outline = ('{} discordant/split reads processed').format(hit_ct)
+                 print(outline)
+            
     return(uniuid_to_seq_dict, uniuid_to_phred_dict)
-    
-def build_fastq(infile_name, uniuid_to_seq_dict, uniuid_to_phred_dict):
-    infile = open(infile_name)
-    outfile = open(infile_name.split('.fa')[0] + '.fastq', 'w')
-    
-    for line in infile:
-        if line[0] == '>':
-            uid = line.split('>')[1].strip()
-            
-            if uid not in uniuid_to_seq_dict or uid not in uniuid_to_phred_dict:
-                if uid not in uniuid_to_seq_dict:
-                    print(uid)
-                    print((uniuid_to_seq_dict))
-                    print(len(uniuid_to_seq_dict))
-                    1/0
-                else:
-                    print(uid)
-                    print(uniuid_to_phred_dict)
-                    print(len(uniuid_to_phred_dict))
-                    1/0
-            
-            else:
-                if uid in uniuid_to_seq_dict:
-                    seq = uniuid_to_seq_dict[uid]
-                
-                if uid in uniuid_to_phred_dict:
-                    phred = uniuid_to_phred_dict[uid]
-                
-                outline = ('@{}\n{}\n+\n{}\n').format(uid, seq, phred)
-                outfile.write(outline)
-            
-    infile.close()
-    outfile.close()
 
 def prep_qname(qname, hypo, outline):
      
@@ -876,6 +917,7 @@ def parse_brks(break_file_name):
     
     for line in brks:
         if line[0]!='#':
+            print('line', line)
             line = line.strip()
             
             hypo = line.split('\t')[0]
@@ -884,7 +926,7 @@ def parse_brks(break_file_name):
             stop = int(line.split('\t')[3])
             outline=('{},{},{}').format(chromo, start, stop)
             qname = line.split('\t')[8]
-            
+                        
             if qname.count(',')>0:
                 qname_list = qname.split(',')
                 for qname in qname_list:
@@ -1376,73 +1418,76 @@ def parse_json(json_file_name, seq, hypothesis_dict, anchor_contig_dict):
     query_deets_dict = {}
     try:
         data = json.load(open(json_file_name))
+        process_data = True
     except:
-        print('json file ' + json_file_name + ' not found')
+        print('error in loading json file ' + json_file_name)
+        process_data = False
     
-    for report_index in range(len(data["BlastOutput2"])):
-        data_dict = (data["BlastOutput2"][report_index])
-        for each_report in data_dict.items():
-            for a_key, a_value in enumerate(each_report):
-                if type(a_value)==dict:                   
-                    for b_key, b_value in a_value.items():
-                        if type(b_value)==dict:
-                            for c_key, c_value in b_value.items():
-                                if ('bl2seq' in c_key) and (type(c_value)==list):
-                                    hit_dict = c_value[0]
-                                    
-                                    for d_key, d_value in hit_dict.items():                                        
-                                        q_title = str(hit_dict['query_title'])
-                                          
-                                        if ('hits' in d_key) and (type(d_value)==list) and (len(d_value)>0):
-                                            for each_hits in d_value:
-                                                
-                                                for e_key, e_value in each_hits.items():
-                                                
-                                                    base = q_title + '.'+str(each_hits['num']) 
-                                                    chromo = each_hits['description']
-                                                    chromo = chromo[0]
-                                                    #chromo_dict[base] = str(chromo['id'])
-                                                        
-                                                    if (e_key == 'hsps') and (type(e_value)==list):
-                                                        for e_index in range(len(e_value)):
-                                                            each_hsps = e_value[e_index]
-    
-                                                            numb = str(base)+'.'+str(each_hsps['num'])
+    if process_data:
+        for report_index in range(len(data["BlastOutput2"])):
+            data_dict = (data["BlastOutput2"][report_index])
+            for each_report in data_dict.items():
+                for a_key, a_value in enumerate(each_report):
+                    if type(a_value)==dict:                   
+                        for b_key, b_value in a_value.items():
+                            if type(b_value)==dict:
+                                for c_key, c_value in b_value.items():
+                                    if ('bl2seq' in c_key) and (type(c_value)==list):
+                                        hit_dict = c_value[0]
+                                        
+                                        for d_key, d_value in hit_dict.items():                                        
+                                            q_title = str(hit_dict['query_title'])
+                                              
+                                            if ('hits' in d_key) and (type(d_value)==list) and (len(d_value)>0):
+                                                for each_hits in d_value:
+                                                    
+                                                    for e_key, e_value in each_hits.items():
+                                                    
+                                                        base = q_title + '.'+str(each_hits['num']) 
+                                                        chromo = each_hits['description']
+                                                        chromo = chromo[0]
+                                                        #chromo_dict[base] = str(chromo['id'])
                                                             
-                                                            if len(numb)>1:
-                                                                active = True
-                                                                hit_from = int(each_hsps["hit_from"])                                                                
-                                                                hit_to = int(each_hsps["hit_to"])                                                                
-                                                                query_from = int(each_hsps["query_from"])                                                                
-                                                                query_to = int(each_hsps["query_to"])                                                            
-                                                                bit_score = float(each_hsps["bit_score"])
-                                                                evalue_score = float(each_hsps["evalue"])
-                                                                query_strand = str(each_hsps["query_strand"])                                                                
-                                                                hit_strand = str(each_hsps["hit_strand"])                                                                
-                                                                qseq = str(each_hsps["qseq"])                                                            
-                                                                hseq = str(each_hsps["hseq"])
-                                                            
-                                                            if evalue_score > max_eval:
-                                                                active = False
-                                                            
-                                                            if active:
-                                                                active = False
-                                                                query_deets_dict[numb] = {
-                                                                    'q_id':base,
-                                                                    'chromo':chromo['id'],
-                                                                    'hit_from':hit_from,
-                                                                    'hit_to':hit_to,
-                                                                    'query_from':query_from,
-                                                                    'query_to':query_to,
-                                                                    'bit_score':bit_score,
-                                                                    'query_strand':query_strand,
-                                                                    'hit_strand':hit_strand,
-                                                                    'qseq':qseq, 
-                                                                    'hseq':hseq,
-                                                                    'q_title':q_title,
-                                                                    'contig':seq}
+                                                        if (e_key == 'hsps') and (type(e_value)==list):
+                                                            for e_index in range(len(e_value)):
+                                                                each_hsps = e_value[e_index]
+        
+                                                                numb = str(base)+'.'+str(each_hsps['num'])
                                                                 
-                                                                numb = 0
+                                                                if len(numb)>1:
+                                                                    active = True
+                                                                    hit_from = int(each_hsps["hit_from"])                                                                
+                                                                    hit_to = int(each_hsps["hit_to"])                                                                
+                                                                    query_from = int(each_hsps["query_from"])                                                                
+                                                                    query_to = int(each_hsps["query_to"])                                                            
+                                                                    bit_score = float(each_hsps["bit_score"])
+                                                                    evalue_score = float(each_hsps["evalue"])
+                                                                    query_strand = str(each_hsps["query_strand"])                                                                
+                                                                    hit_strand = str(each_hsps["hit_strand"])                                                                
+                                                                    qseq = str(each_hsps["qseq"])                                                            
+                                                                    hseq = str(each_hsps["hseq"])
+                                                                
+                                                                if evalue_score > max_eval:
+                                                                    active = False
+                                                                
+                                                                if active:
+                                                                    active = False
+                                                                    query_deets_dict[numb] = {
+                                                                        'q_id':base,
+                                                                        'chromo':chromo['id'],
+                                                                        'hit_from':hit_from,
+                                                                        'hit_to':hit_to,
+                                                                        'query_from':query_from,
+                                                                        'query_to':query_to,
+                                                                        'bit_score':bit_score,
+                                                                        'query_strand':query_strand,
+                                                                        'hit_strand':hit_strand,
+                                                                        'qseq':qseq, 
+                                                                        'hseq':hseq,
+                                                                        'q_title':q_title,
+                                                                        'contig':seq}
+                                                                    
+                                                                    numb = 0
 
     '''
     for each nt of the read (query), determine if it is part of the anchor or not
@@ -2384,15 +2429,12 @@ if args.make:
     
     command_file_name=('{}_command_file.sh').format(s_path)
     command_file = open(command_file_name,'w')
-    command_file.write('module load bwa/intel/0.7.17\n'
-                       'module load samtools/intel/1.14\n'
-                       'module load bedtools/intel/2.29.2\n'
-                       'module load velvet/1.2.10\n'
-                       'module load blast+/2.11.0\n'
-                       'module load samblaster/0.1.26\n'
-                       'module load mafft/intel/7.475\n'
-                       'module load emboss/intel/6.6.0\n\n\n')
     
+    if args.module_filename:
+        module_file = open(args.module_filename)
+        
+        command_file.write(module_file.read())
+            
     ref_fa=('genome_fa={}\n').format(args.fa_file)
     #ref_gff=('\tgenome_gff={}\n').format(args.gff_file)
          
@@ -2665,1167 +2707,6 @@ if args.peaks:
         depth_pickle_name = ('{}/peaks_{}_{}.p').format(pickles_dir, each_sample, each_type)         
         with open(depth_pickle_name, 'wb') as file:
             pickle.dump(depth_dict, file)
-            
-def calculate_over_frame(start, stop, chromo, df):
-    mge_nt_list = []
-    
-    for each in range(start,stop +1):
-        mge_nt_list.append(each)
-    
-    chromo_df = df.loc[df["chromo"] == chromo]
-    mge_df = chromo_df.query('nuc in @mge_nt_list')
-        
-    return(mge_df) 
-
-def nan_inf_cleaner(val):
-    if np.isnan(val):
-        val = 0
-    
-    if np.isinf(val):
-        val = 0
-        
-    return(val)
-
-def weighted_outlier(df, region):
-    mean, std = df.mean(), df.std()
-    
-    top = df[df >= mean+std]
-    bottom = df[df <= mean-std]
-        
-    if bottom.mean(skipna=True) and bottom.std(skipna=True):
-    #if (sum(bottom) > 1):
-        diff = ( (top.mean(skipna=True) - top.std(skipna=True)) - (bottom.mean(skipna=True) + bottom.std(skipna=True)) )
-        rel_outlier = (len(top)+len(bottom))/max(len(df),1)
-        wo = nan_inf_cleaner( rel_outlier * diff)
-        
-        
-    else:
-        diff = ((top.mean(skipna=True) - top.std(skipna=True)))
-        rel_outlier = (len(top))/max(len(df),1)
-        wo = nan_inf_cleaner(rel_outlier * diff)    
-   
-    return(wo)
-
-
-# def tea_stats(df_num, df_den, region):
-#     num_cov = nan_inf_cleaner(stats.variation(np.array(df_num)))
-    
-#     num_sum = df_num.sum()
-    
-#     num_wo = weighted_outlier(df_num, region)
-    
-#     num_diff = max(df_num)-min(df_num)
-#     num_entropy = nan_inf_cleaner(stats.entropy(np.array(df_num)))
-    
-#     den_cov = nan_inf_cleaner(stats.variation(np.array(df_den)))
-    
-#     den_sum = df_den.sum()
-    
-#     den_wo = weighted_outlier(df_den, region)
-    
-#     den_diff = max(df_den)-min(df_den)
-#     den_entropy = nan_inf_cleaner(stats.entropy(np.array(df_den)))
-    
-#     cov = num_cov/max(den_cov,1)
-#     rsum = num_sum/max(den_sum,1)
-#     wo = num_wo/max(den_wo,1)
-#     diff = num_diff/max(den_diff,1)
-#     entropy = num_entropy/max(den_entropy,1)
-        
-#     return(cov, rsum, wo, diff, entropy)
-
-# def tea_features(region, chromo, rd_mpileup_df, runmode):
-    
-#     temp_dict = {}
-    
-#     if runmode == 'rd':
-#         adjust = 300
-#         length = max(region) - min(region) + 2*adjust
-        
-#         left_outside_start = min(region)-int(adjust)
-#         left_outside_stop = min(region)
-        
-#         inside_start = min(region)  
-#         inside_stop = max(region)
-        
-#         right_outside_start = max(region)  
-#         right_outside_stop = max(region)+int(adjust)
-        
-#         left_outside = calculate_over_frame(left_outside_start, left_outside_stop, chromo, rd_mpileup_df)
-#         inside = calculate_over_frame(inside_start, inside_stop, chromo, rd_mpileup_df)
-        
-#         left_cov, left_sum, left_wo, left_diff, left_entropy = tea_stats(inside['ct'], left_outside['ct'], region)
-    
-#         right_outside = calculate_over_frame(right_outside_start, right_outside_stop, chromo, rd_mpileup_df)
-#         #right_inside = calculate_over_frame(right_inside_start, right_inside_stop, chromo, rd_mpileup_df)
-        
-#         right_cov, right_sum, right_wo, right_diff, right_entropy = tea_stats(inside['ct'], right_outside['ct'], region)
-        
-#         df_cov = (left_cov + right_cov)/length
-#         df_sum = (left_sum + right_sum)/length
-#         df_wo = (left_wo + right_wo)/length
-#         df_diff = (left_diff + right_diff)/length
-#         df_entropy = (left_entropy + right_entropy)/length
-    
-#     if runmode == 'disco':
-#         adjust = 300
-        
-#         left_outside_start = min(region)-int(adjust)
-#         left_outside_stop = min(region)-75
-#         left_inside_start = min(region)-75  
-#         left_inside_stop = min(region)+int(adjust)
-        
-#         right_inside_start = max(region)-int(adjust)
-#         right_inside_stop = max(region)+75
-#         right_outside_start = max(region)+75  
-#         right_outside_stop = max(region)+int(adjust)
-    
-#         left_outside = calculate_over_frame(left_outside_start, left_outside_stop, chromo, rd_mpileup_df)
-#         left_inside = calculate_over_frame(left_inside_start, left_inside_stop, chromo, rd_mpileup_df)
-        
-#         left_cov, left_sum, left_wo, left_diff, left_entropy = tea_stats(left_inside['ct'], left_outside['ct'],region)
-    
-#         right_outside = calculate_over_frame(right_outside_start, right_outside_stop, chromo, rd_mpileup_df)
-#         right_inside = calculate_over_frame(right_inside_start, right_inside_stop, chromo, rd_mpileup_df)
-        
-#         right_cov, right_sum, right_wo, right_diff, right_entropy = tea_stats(right_inside['ct'], right_outside['ct'], region)
-        
-#         df_cov = left_cov + right_cov
-#         df_sum = left_sum + right_sum
-#         df_wo = left_wo + right_wo
-#         df_diff = left_diff + right_diff
-#         df_entropy = left_entropy + right_entropy
-    
-#     temp_dict = {'df_cov': df_cov, 'df_sum': df_sum,
-#                  'df_wo': df_wo, 'df_diff': df_diff,
-#                  'df_entropy': df_entropy}
-    
-#     return(temp_dict)
-            
-# def mge_trace_three_frames(mpileup_df, rd_mpileup_df, split_mpileup_df):
-#     global mge_region_lookup_dict
-    
-#     trace_dict = {}
-    
-#     for chromo in chromo_list:
-#         if chromo in mge_region_lookup_dict:
-#             sub_mg_set = mge_region_lookup_dict[chromo]
-            
-#             if chromo not in trace_dict:
-#                 trace_dict[chromo] = {}
-                            
-#             for region in sub_mg_set:            
-#                 if region in trace_dict[chromo]:
-#                     print('Region error: ', region)
-#                     1/0
-                    
-#                 trace_dict[chromo][region] = {}
-#                 trace_dict[chromo][region] = {'rd': {}, 'disco': {}, 'split':{}}
-                
-#                 trace_dict[chromo][region]['rd'] = tea_features(region, chromo, rd_mpileup_df, 'rd')
-#                 trace_dict[chromo][region]['disco'] = tea_features(region, chromo, mpileup_df, 'disco')
-#                 trace_dict[chromo][region]['split'] = tea_features(region, chromo, split_mpileup_df, 'disco')
-                
-#     return(trace_dict)
-
-def populate_confusion_matrix(val, tval, rdict):
-    if val == tval:
-        if tval:
-            rdict['TP']+=1
-        else:
-            rdict['TN']+=1
-    else:
-        if tval:
-            rdict['FN']+=1
-        else:
-            rdict['FP']+=1    
-    return(rdict)
-
-def print_confusion_matrix(name, rdict, read_type, outfile):
-    outline = ('{name}\t{read_type}\tTP:{tp}\tFP:{fp}\tFN:{fn}\tTN:{tn}\n').format(
-        name = name,
-        read_type = read_type,
-        tp = rdict['TP'],
-        fp = rdict['FP'],
-        fn = rdict['FN'],
-        tn = rdict['TN'])
-            
-    outfile.write(outline)
-    #return(outline)
-    
-def calc_value_weight(result_val, result_dict):
-    denom = (result_dict['FP']+result_dict['TP'])
-    #denom = (result_dict['FP']+result_dict['TP']+result_dict['FN'])
-    s_val = int(result_val)*(result_dict['TP']/max(denom,1))
-    return (s_val)
-    
-def norm_value(val_list, total, runmode):
-    
-    if runmode == 'count':
-        total = max(sum(val_list),1)
-        val_list = [x/total for x in val_list]
-    
-        val_median = np.median(val_list)
-        val_std = np.std(val_list)
-        
-        return(val_median, val_std, total)
-    
-    if runmode == 'distribution':
-        val_median = np.median(val_list)
-        val_std = np.std(val_list)
-        
-        return(val_median, val_std)
-    
-    if runmode == 'norm':
-        val = val_list / max(total, 1)
-        
-        return(val)
-    
-def mge_to_model_parser(mge_file_name):
-    value_df_object = {}
-
-    mge_file = open(mge_file_name)
-    
-    for line in mge_file:
-        if line[0] != '#':
-            line = line.strip()
-            sample_name, sample_path = line.split('\t')
-            
-            if sample_name in value_df_object:
-                if sample_path != value_df_object[sample_name]:
-                    print('Error: ensure that sample_name (first column) is unique')
-                    exit()
-                    
-            value_df_object[sample_name] = sample_path
-    
-    mge_file.close()
-    
-    return(value_df_object) 
-    
-    
-def model_pipe(sample, X_train, X_test, y_train, y_test, 
-               preprocess, sampler, classifier, performance_dict, log_file):
-    
-    pipeline = [make_pipeline(preprocess[0], sampler[0], classifier[0])]
-    
-    for model in pipeline:
-        perf_name = ('{}\t{}\t{}\t').format(preprocess[1], sampler[1], classifier[1])
-        print(perf_name)
-        
-        try:
-            toc = time.perf_counter()
-            
-            model.fit(X_train, y_train)
-            y_pred = model.predict(X_test)
-            
-            tic = time.perf_counter()
-            
-            gmean = geometric_mean_score(y_test, y_pred)
-            fval = f1_score(y_test, y_pred)
-            tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
-            time_elapsed = tic-toc
-            
-            outline = ('{strain}\t{perf_name}\t'
-                       '{gmean}\t{fval}\t{tp}\t{fp}\t{fn}\t{tn}\t{time_elapsed}\n').format(
-                           strain=sample, perf_name=perf_name,
-                           gmean=round(gmean,3), fval = round(fval,3),
-                           tp = tp, fp = fp, fn = fn, tn = tn,
-                           time_elapsed = time_elapsed
-                           )
-            #print(outline)
-            log_file.write(outline)
-            
-            if perf_name not in performance_dict:
-                performance_dict[perf_name] = {'gmean':[],'fval':[], 'time_elapsed':[]}
-                
-            performance_dict[perf_name]['gmean'].append(gmean)
-            performance_dict[perf_name]['fval'].append(fval)
-            performance_dict[perf_name]['time_elapsed'].append(time_elapsed)
-            
-        except:
-            outline = ('{}Exception occurred applying model\n').format(perf_name)
-            #print(outline)
-            log_file.write(outline)
-            
-    return(performance_dict)
-    
-def calc_final_output_performance_values(perfo, performance_dict):
-    gmean = round(np.median(performance_dict[perfo]['gmean']),3)
-    gstd = round(np.std(performance_dict[perfo]['gmean']),3)
-    fval = round(np.median(performance_dict[perfo]['fval']),3)
-    fstd = round(np.std(performance_dict[perfo]['fval']),3)
-    time_elapsed = round(np.median(performance_dict[perfo]['time_elapsed']),3)
-    
-    score=(gmean-gstd)+(fval-fstd)
-    
-    return(gmean, gstd, fval, fstd, time_elapsed, score)
-
-def meta_selection(sample, X, y, performance_dict, log_file):
-    test_number = 100
-    if args.metaparameters == 'fast':
-        test_number = 10
-    
-    outline = ("Running {sample} for {test_number} runs ...").format(
-        sample=sample, test_number = test_number)
-    
-    print(outline)
-    
-    for test in range(test_number + 1):
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, stratify=y)
-        
-        wval = len(y_train[y_train["onehot"]>0])/len(y_train)
-                                     
-        weights = {0:wval, 1:1.0}
-        
-        if args.metaparameters == 'fast':
-            for preprocess in [('passthrough','none'),
-                               (MinMaxScaler(),'MinMaxScaler'),
-                               ]:
-            
-                for classifier in [(LogisticRegression(class_weight=weights, max_iter=1000), 'LogisticRegression_lbgfs'),
-                                   (LogisticRegression(solver='liblinear', class_weight=weights, max_iter=1000), 'LogisticRegression_liblinear'),
-                                   ]:
-                    #
-                    for sampler in [('passthrough','none'),
-                                    (FunctionSampler(), 'FunctionSampler'),
-                                    (AllKNN(), 'AllKNN')
-                                    ]:
-                        #
-                        performance_dict = model_pipe(sample, X_train, X_test, y_train, y_test, 
-                                       preprocess, sampler, classifier, performance_dict, log_file)
-        
-        if args.metaparameters == 'robust':
-            for preprocess in [('passthrough','none'),
-                               (MinMaxScaler(),'MinMaxScaler'),
-                               (StandardScaler(), 'StandardScaler'),
-                               (QuantileTransformer(),'QuantileTransformer'),
-                               ]:
-            
-                for classifier in [(KNeighborsClassifier(), 'KNeighborsClassifier'),
-                                   (LogisticRegression(class_weight=weights, max_iter=1000), 'LogisticRegression_lbgfs'),
-                                   (ComplementNB(), 'ComplementNB'),
-                                   ]:
-                    #
-                    for sampler in [('passthrough','none'),
-                                    (FunctionSampler(), 'FunctionSampler'),
-                                    (ADASYN(), 'ADASYN'),
-                                    (AllKNN(), 'AllKNN')
-                                    ]:
-                        #
-                        performance_dict = model_pipe(sample, X_train, X_test, y_train, y_test, 
-                                       preprocess, sampler, classifier, performance_dict, log_file)
-                        
-        if args.metaparameters == 'complete':
-            for preprocess in [('passthrough','none'),
-                               (MinMaxScaler(),'MinMaxScaler'),
-                               (StandardScaler(), 'StandardScaler'),
-                               (Normalizer(), 'Normalizer'),
-                               (PowerTransformer(),'PowerTransformer'),
-                               (QuantileTransformer(),'QuantileTransformer'),
-                               ]:
-            
-                for classifier in [(KNeighborsClassifier(), 'KNeighborsClassifier'),
-                                   (GaussianNB(), 'GaussianNB'),
-                                   (LogisticRegression(class_weight=weights, max_iter=1000), 'LogisticRegression_lbgfs'),
-                                   (LogisticRegression(solver='liblinear', class_weight=weights, max_iter=1000), 'LogisticRegression_liblinear'),
-                                   (ComplementNB(), 'ComplementNB'),
-                                   (RandomForestClassifier(), 'RandomForestClassifier'),
-                                   ]:
-                    #
-                    for sampler in [('passthrough','none'),
-                                    (FunctionSampler(), 'FunctionSampler'),
-                                    (RandomOverSampler(), 'RandomOverSampler'),
-                                    (ADASYN(), 'ADASYN'),
-                                    (SMOTE(), 'SMOTE'), 
-                                    (RandomUnderSampler(), 'RandomUnderSampler'),
-                                    (NearMiss(version=1), 'NearMiss'),
-                                    (AllKNN(), 'AllKNN')
-                                    ]:
-                        #
-                        performance_dict = model_pipe(sample, X_train, X_test, y_train, y_test, 
-                                       preprocess, sampler, classifier, performance_dict, log_file)
-                    
-    return(performance_dict)
-        
-def model_selection(value_df_object):
-        
-    #TODO make into standard temp_dir 
-    log_file_name = ('{}{}_model_selection_run.log').format(output_dir, output_file)
-    log_file = open(log_file_name, 'w')
-    
-    header = ('sample\tmodel\tgmean\tfval\tTP\tFP\tFN\tTN\tTime_elapsed\n')
-    log_file.write(header)
-    
-    #TODO remove
-    performance_dict = {}
-    #
-    for sample in value_df_object:
-        
-        inpickle = value_df_object[sample]
-        print(sample, inpickle)
-        value_df = pd.read_pickle(inpickle) 
-                     
-        X = value_df.drop(['onehot'], axis=1)
-        y = value_df[["onehot"]]
-        
-        performance_dict = meta_selection(sample, X, y, performance_dict, log_file)
-        
-    log_file.close()
-
-    results_name = ('{}{}_model_selection_best.log').format(output_dir, output_file)
-    results_file = open(results_name, 'w')
-
-    rank_dict = {}
-    score_list = []
-    
-    for perfo in performance_dict:
-        _gmean, _gstd, _fval, _fstd, _time_elapsed, score = calc_final_output_performance_values(perfo, performance_dict)
-        
-        score_list.append(score)
-        
-    percentile_array = np.percentile(np.array(score_list), range(0,101,10))
-    
-    for perfo in performance_dict:
-        gmean, gstd, fval, fstd, time_elapsed, score = calc_final_output_performance_values(perfo, performance_dict)
-        
-        outline = ('{perfo}\tscore: {score}\tgmean: {gmean}\t'
-                   'gmean_std: {gstd}\tf1: {fval}\tf1_std: {fstd}\ttime_elapsed:{time_elapsed}\n').format(
-                       perfo = perfo, score = score, gmean = gmean, gstd = gstd,
-                       fval = fval, fstd = fstd, 
-                       time_elapsed = time_elapsed)
-
-        pct = calc_percentile(round(score, 5), percentile_array)
-        
-        if pct > 90:
-            print(outline)
-            
-        results_file.write(outline)
-            
-        if score not in rank_dict:
-            rank_dict[score] = set()
-            
-        rank_dict[score].add(perfo)
-        
-    results_file.close()
-        
-    rank_list = list(rank_dict.keys())
-    rank_list.sort(reverse=True)
-    
-    if len(rank_dict[rank_list[0]]) > 1:
-        new_rank_dict = {}
-        for perfo in rank_dict[rank_list[0]]:
-            gmean, gstd, fval, fstd, time_elapsed, _score = calc_final_output_performance_values(perfo, performance_dict)
-            score=(gmean-gstd)+(fval-fstd)-time_elapsed
-            
-            if score not in new_rank_dict:
-                new_rank_dict[score] = set()
-                
-            new_rank_dict[score].add(perfo)
-            
-        new_rank_list = list(new_rank_dict.keys())
-        new_rank_list.sort(reverse=True)
-        
-        for perfo in new_rank_dict[new_rank_list[0]]:
-            gmean, gstd, fval, fstd, time_elapsed, _score = calc_final_output_performance_values(perfo, performance_dict)
-            score=(gmean-gstd)+(fval-fstd)-time_elapsed
-        
-            outline = ('Best performer: {perfo}\tscore: {score}\tgmean: {gmean}\t'
-                       'gmean_std: {gstd}\tf1: {fval}\tf1_std: {fstd}\ttime_elapsed: {time_elapsed}\n').format(
-                           perfo = perfo, score = score, gmean = gmean, gstd = gstd,
-                           fval = fval, fstd = fstd,
-                           time_elapsed = time_elapsed)
-            
-            print(outline)
-        
-    if len(rank_dict[rank_list[0]]) == 1:
-        for perfo in rank_dict[rank_list[0]]:
-            gmean = round(np.median(performance_dict[perfo]['gmean']),3)
-            gstd = round(np.std(performance_dict[perfo]['gmean']),3)
-            fval = round(np.median(performance_dict[perfo]['fval']),3)
-            fstd = round(np.std(performance_dict[perfo]['fval']),3)
-            time_elapsed = round(np.std(performance_dict[perfo]['time_elapsed']),3)
-            
-            score=(gmean-gstd)+(fval-fstd)
-            
-            outline = ('Best performer: {perfo}\tscore: {score}\tgmean: {gmean}\t'
-                       'gmean_std: {gstd}\tf1: {fval}\tf1_std: {fstd}\ttime_elapsed: {time_elapsed}\n').format(
-                           perfo = perfo, score = score, gmean = gmean, gstd = gstd,
-                           fval = fval, fstd = fstd,
-                           time_elapsed = time_elapsed)
-            
-            print(outline)
-            
-def model_train(value_df_object):
-    
-    preprocessor_name = args.preprocessor
-    sampler_name = args.sampler
-    classifier_name = args.classifier
-    
-    master_value_df = pd.DataFrame()
-    
-    for sample in value_df_object:    
-        inpickle = value_df_object[sample]
-        with open(inpickle, 'rb') as fp:
-            value_df = pickle.load(fp) 
-            
-        outline = ('Loading {}...\n Addding {} events...').format(sample, len(value_df))
-        print(outline)
-        
-        master_value_df = pd.concat([master_value_df, value_df], ignore_index=True)
-                     
-    print('Total events evaluated: ', str(len(master_value_df)))
-    #master_value_df
-    X = master_value_df.drop(['onehot'], axis=1)
-    y = master_value_df[["onehot"]]
-        
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, stratify=y)
-    
-    wval = len(y_train[y_train["onehot"]>0])/len(y_train)
-                                 
-    weights = {0:wval, 1:1.0}
-    
-    preprocess_lookup = {'none': 'passthrough',
-                       'MinMaxScaler': MinMaxScaler(),
-                       'StandardScaler': StandardScaler(),
-                       'Normalizer': Normalizer(),
-                       'PowerTransformer': PowerTransformer(),
-                       'QuantileTransformer': QuantileTransformer(),
-                       }
-    
-    classifier_lookup = {'KNeighborsClassifier': KNeighborsClassifier(),
-                         'GaussianNB': GaussianNB(),
-                         'LogisticRegression_lbgfs': LogisticRegression(class_weight=weights, max_iter=1000),
-                         'LogisticRegression_liblinear': LogisticRegression(solver='liblinear', class_weight=weights, max_iter=1000),
-                         'ComplementNB': ComplementNB(),
-                         'RandomForestClassifier': RandomForestClassifier(),
-                        }
-                    #
-    sampler_lookup = {'none':'passthrough',
-                    'FunctionSampler': FunctionSampler(),
-                    'RandomOverSampler': RandomOverSampler(),
-                    'ADASYN': ADASYN(),
-                    'SMOTE': SMOTE(),
-                    'RandomUnderSampler': RandomUnderSampler(),
-                    'NearMiss': NearMiss(version=1),
-                    'AllKNN': AllKNN(),
-                    }
-    
-    if preprocessor_name in preprocess_lookup:
-        preprocess = preprocess_lookup[preprocessor_name]
-    else:
-        print('Error identifying preprocesor.')
-        print('Please specify: ', preprocess_lookup.keys())
-        
-    if sampler_name in sampler_lookup:
-        sampler = sampler_lookup[sampler_name]
-    else:
-        print('Error identifying sampler.')
-        print('Please specify: ', sampler_lookup.keys())
-        
-    if classifier_name in classifier_lookup:
-        classifier = classifier_lookup[classifier_name]
-    else:
-        print('Error identifying classifier.')
-        print('Please specify: ', classifier_lookup.keys())
-        
-    pipeline = [make_pipeline(preprocess, sampler, classifier)]
-    
-    for model in pipeline:
-        perf_name = ('{}\t{}\t{}\t').format(preprocessor_name, sampler_name, classifier_name)
-        print(perf_name)
-        
-        try:
-            toc = time.perf_counter()
-            
-            model.fit(X_train, y_train)
-            y_pred = model.predict(X_test)
-            
-            tic = time.perf_counter()
-            
-            gmean = geometric_mean_score(y_test, y_pred)
-            fval = f1_score(y_test, y_pred)
-            tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
-            time_elapsed = tic-toc
-            
-            outline = ('Top_model:\t{perf_name}\t'
-                       'gmean: {gmean}\tfval: {fval}\tTP: {tp}\tFP: {fp}\tFN: {fn}\tTN: {tn}\ttime_elapsed: {time_elapsed}\n').format(
-                           perf_name=perf_name,
-                           gmean=round(gmean,3), fval = round(fval,3),
-                           tp = tp, fp = fp, fn = fn, tn = tn,
-                           time_elapsed = time_elapsed
-                           )
-            print(outline)
-            
-            pickle_out = ("{}").format(args.model_object)
-            print('Model saved to: ', pickle_out)
-            pickle.dump(model, open(pickle_out, 'wb'))
-            
-            return(True)
-            
-        except:
-            outline = ('{} Exception occurred applying model\n').format(perf_name)
-            1/0
-            
-    return(False)
-
-
-def model_predict(value_df_object):    
-    model_name = args.model_object
-    with open(model_name, 'rb') as fp:
-        model = pickle.load(fp)
-     
-    master_value_df = pd.DataFrame()
-    for sample in value_df_object:    
-        inpickle = value_df_object[sample]
-        
-        with open(inpickle, 'rb') as fp:
-            master_value_df = pickle.load(fp)
-          
-        try:
-            outfile_name = ('{}/{}_predicted_mge.gff').format(final_output_dir, sample) 
-            outfile = open(outfile_name, 'w')
-                
-            outline = ('Loading {}...\n with {} events...').format(sample, len(master_value_df))
-            print(outline)
-            
-            print('Total events evaluated: ', str(len(master_value_df)))
-            
-            X = master_value_df.drop(['onehot'], axis=1)
-            y_pred = model.predict(X)
-            
-            y_pred_prob = model.predict_proba(X)[:,1]
-            
-            master_value_df['predict'] = y_pred
-            master_value_df['confidence'] = y_pred_prob
-            
-            csv_name = ('{}/{}_predicted_mge.csv').format(final_output_dir, sample)
-            master_value_df.to_csv(csv_name)
-            
-            for index, row in master_value_df.iterrows():
-                chromo, regions = index.split(':')
-                start, stop = regions.split('-')
-                name = index
-                
-                process = False
-                
-                if args.return_all:
-                    process = True
-                else:
-                    if (row['predict'] == 1) or (row['onehot'] == 1):
-                        process = True
-                        
-                if process:                
-                    outline = ('{chromo}\tmge\tmge_prediction\t{start}\t{stop}\t{predict}'
-                               '\t.\t.\tID={name}; score={score}; predict={predict};'
-                               'confidence={confidence}; exp={onehot}\n').format(
-                                   chromo = chromo,
-                                   start = start, stop = stop,
-                                   predict = row['predict'], name = name, 
-                                   score = row['total_score'], confidence = row['confidence'],
-                                   onehot = row['onehot'])
-                    
-                    print(outline)
-                    outfile.write(outline)
-                
-            outfile.close()
-            
-        except:
-            outline = ('Error occurred applying model to sample {}\n').format(sample)
-            print(outline)
-            1/0
-                    
-# def calculate_score(value_df):
-        
-#     #calc score
-#     temp_df = value_df.drop(['length', 'onehot'], axis=1)
-#     value_df['total_score'] = (temp_df.sum(axis=1))
-            
-#     for col_name in value_df.columns:        
-#         if col_name not in ['length', 'onehot']:
-            
-#             new_evl_name = col_name + '_eval'
-#             new_zsc_name = col_name + '_zscore'
-#             new_pval_name = col_name + '_zscore_pval'
-#             g_median = value_df[col_name].mean()
-#             g_std = value_df[col_name].std()
-            
-#             eval_case = (value_df[col_name] > (g_median + g_std))
-#             zscore = (value_df[col_name] - g_median) / max(g_std, 1)
-            
-#             value_df[new_evl_name] = eval_case
-#             value_df[new_zsc_name] = zscore
-#             value_df[new_pval_name] = stats.norm.sf(abs(zscore))
-    
-#     return(value_df)
-
-    
-def value_log_file(sample, trace_dict, defined_dict, region_to_feature_dict):
-    ##TODO change values    
-    pickle_out = ("{}/{}_trace_dict.p").format(pickles_dir, sample)
-    print(pickle_out)
-    pickle.dump(trace_dict, open(pickle_out, 'wb'))
-        
-    pickle_out = ("{}/{}_defined_dict.p").format(pickles_dir, sample)
-    print(pickle_out)
-    pickle.dump(defined_dict, open(pickle_out, 'wb'))
-    
-    pickle_out = ("{}/{}_region_to_feature_dict.p").format(pickles_dir, sample)
-    print(pickle_out)
-    pickle.dump(region_to_feature_dict, open(pickle_out, 'wb')) 
-    
-    value_dict = {}
-    
-    uid_list = []
-    abs_list = []
-    for chromo in trace_dict:
-        for region in trace_dict[chromo]:
-            uid = ('{}:{}-{}').format(chromo, min(region), max(region))
-            uid_list.append(uid)
-            
-            if region in region_to_feature_dict[chromo]:
-                value_dict[uid] = region_to_feature_dict[chromo][region]
-                
-                for read_type in ['rd', 'disco', 'split']:
-                    for feature in trace_dict[chromo][region][read_type].keys():
-                        feature_name = ('{}_{}').format(read_type, feature)
-                        value_dict[uid][feature_name] = trace_dict[chromo][region][read_type][feature]
-                            
-                if args.known_mge:
-                    if region in defined_dict[chromo]:
-                        value_dict[uid]['onehot'] = int(defined_dict[chromo][region])
-                    else:
-                        print('missing target value: ', chromo, region)
-                else:
-                    target_value = 'unknown'
-                
-            else:
-                abs_list.append([chromo, region])
-                
-    value_df = pd.DataFrame.from_dict(value_dict, orient='index')
-    
-    value_df = value_df.fillna(0)
-    
-    value_df = calculate_score(value_df)
-    outfile_name = ('{}/{}_feature_values.tab').format(final_output_dir, sample)
-    value_df.to_csv(outfile_name)
-    
-    pickle_out = ('{}/{}_feature_values.p').format(final_output_dir, sample)
-    print(pickle_out)
-    pickle.dump(value_df, open(pickle_out, 'wb')) 
-    
-    return(value_df)
-
-def calc_percentile(score, percentile_array):
-    index = 0
-    for pct in percentile_array:
-        
-        if score < pct:
-            return(index)
-        
-        index+=10
-    return(index)
-
-def anchor_properties(anchor_dict):
-    temp_dict = {}
-    
-    return_line = 'anchors;'
-    
-    for num in anchor_dict:
-        (locus, ct) = anchor_dict[num]
-        if ct not in temp_dict:
-            temp_dict[ct] = set()
-        
-        temp_dict[ct].add(locus)
-        
-    total = sum(temp_dict.keys())
-    
-    slist = sorted(temp_dict.keys())
-    
-    for ct in slist:
-        for locus in temp_dict[ct]:
-            outline = ('name={}, pct={}, ct={};').format(locus, 
-            round(100*ct/total), 
-            ct)
-            return_line += outline
-            
-    return(return_line[:-1], temp_dict)               
-            
-
-def make_mge_gff(scored_uid_df, feature_dict):
-    scored_uid_dict = scored_uid_df.to_dict(orient='index')
-    
-    global mge_region_to_name_dict
-
-    outfile_name = ('{}/{}_candidate_TEa.gff').format(final_output_dir, each_sample)
-    outfile = open(outfile_name, 'w')
-    
-    # pre_percentile_array = []
-    
-    # for uid in scored_uid_dict:
-    #     for region in scored_uid_dict[chromo]:
-    #         pre_percentile_array.append(scored_uid_dict[chromo][region])
-            
-    percentile_array = np.percentile(np.array(scored_uid_df['total_score_zscore']), range(0,101,10))
-           
-    for uid in scored_uid_dict:
-        chromo, regions = uid.split(':')
-        start = int(regions.split('-')[0])
-        stop = int(regions.split('-')[1])
-        
-        region = (start, stop)
-
-        mge_name = mge_region_to_name_dict[chromo][region]
-        
-        if mge_name in feature_dict:
-            anchor_line, anchor_dict = anchor_properties(feature_dict[mge_name]['anchors'])
-        else:
-            anchor_line, anchor_dict = 'no_significant_anchors', {}
-            
-        score = scored_uid_dict[uid]['total_score_zscore']
-        pval = scored_uid_dict[uid]['total_score_zscore_pval']
-        
-        pct = calc_percentile(score, percentile_array)
-        
-        #chrXVI	ps_sgd	ltr	62389	62720	.	.	.	ID=S000007192_YPLWdelta5
-        outline = ('{chromo}\tmge\tcandidate_TEa\t{start}\t{stop}\t{score}'
-                   '\t.\t.\t{name}; percentile={pct}; zscore_pval={pval}; {anchor_line}\n').format(
-                       chromo = chromo,
-                       start = start, stop = stop,
-                       pct = pct, name = mge_name, score = score,
-                       pval = pval, anchor_line = anchor_line)
-        
-        outfile.write(outline)
-        
-        for ct in anchor_dict:
-            for locus in anchor_dict[ct]:
-                achromo, nts = locus.split(':')
-                astart, astop = nts.split('-')
-                
-                outline = ('{chromo}\tmge\tcandidate_anchor\t{start}\t{stop}\t{ct}'
-                           '\t.\t.\t{name}_{locus}; score={score}; zscore_pval={pval}; percentile={pct}; {anchor_line}\n').format(
-                               chromo = achromo,
-                               start = astart, stop = astop,
-                               ct = ct, pct = pct, name = mge_name, 
-                               locus = locus, score = score,
-                               pval = pval, anchor_line = anchor_line)
-                
-                outfile.write(outline)
-                
-    outfile.close()
-
-
-def mge_trace_builder(defined_dict, region_to_feature_dict, feature_dict):
-    
-    pickle_name = ('{}/mpileup_{}_RD.p').format(pickles_dir, each_sample)
-    rd_mpileup_df = pickle_loader(pickle_name, 'df')
-    
-    pickle_name = ('{}/mpileup_{}_discordant.p').format(pickles_dir, each_sample)
-    discordant_mpileup_df = pickle_loader(pickle_name, 'df')  
-    
-    pickle_name = ('{}/mpileup_{}_split.p').format(pickles_dir, each_sample)
-    split_mpileup_df = pickle_loader(pickle_name, 'df')  
-              
-    trace_dict = mge_trace_three_frames(discordant_mpileup_df, rd_mpileup_df, split_mpileup_df)
-    
-    scored_uid_df = value_log_file(each_sample, trace_dict, defined_dict, region_to_feature_dict)
-                
-    make_mge_gff(scored_uid_df, feature_dict)
-
-def count_uids_in_region(start, stop, nt_dict):
-    uid_set = set()
-    
-    for nt in range(start, stop + 1):
-        if nt in nt_dict:
-            for uid in nt_dict[nt]:
-                uid_set.add(uid)
-                
-    return(len(uid_set))
-
-def mge_combine_regions(nt_deets):
-    start, stop = min(nt_deets), max(nt_deets) 
-    
-    #region_set collects paired start, stops (tuple)
-    region_set = set()
-    #covered_set records which nts have already been assigned
-    covered_set = set()
-    
-    # region_start should always be the min(nt_deets) not in covered_set
-    for start_nt in range(start, stop + 1):        
-        if (start_nt not in covered_set) and (start_nt in nt_deets):
-
-            region_start = start_nt
-            region_stop = start_nt
-            
-            gap_ct = 0
-            
-            for scan_nt in range(region_start, stop + 1):
-                
-                if gap_ct < gap:
-                    if (scan_nt not in covered_set):
-                        covered_set.add(scan_nt)
-                        
-                    if scan_nt in nt_deets:
-                        region_stop = scan_nt
-                        gap_ct = 0
-                
-                gap_ct += 1
-                
-            region_set.add((region_start, region_stop))
-    
-    return(region_set)
-
-def build_edge_read_set(discordant_sam_file, split_sam_file):
-    global mge_nt_lookup_dict, mge_name_to_region_dict
-    
-    feature_dict = {}
-    selected_uid_dict = {}
-    
-    for runmode in ['discordant', 'split']:        
-        if runmode == 'discordant':
-            print('Parsing discordant reads...')
-            read_file_name = discordant_sam_file        
-            
-        if runmode == 'split':
-            print('Parsing split reads...')
-            read_file_name = split_sam_file
-            
-        read_file = open(read_file_name)
-
-        for line in read_file:
-            line = line.strip()
-            
-            if line[0]!='@':                
-                uid = line.split('\t')[0]
-                chromo = line.split('\t')[2]
-                
-                if chromo in mge_nt_lookup_dict:
-                    start = int(line.split('\t')[3])
-                    mapq = int(line.split('\t')[4])
-                    
-                    if mapq >= mapq_val:
-                        cigar = line.split('\t')[5]
-                        
-                        try:
-                            stop = start + parse_cigar(cigar, 'last_match')
-                        except:
-                            print('parse_cigar error')
-                            print(start, cigar, parse_cigar(cigar, 'last_match'))
-                            1/0
-    
-                        for nt in range(start, stop + 1):
-                            if nt in mge_nt_lookup_dict[chromo]: 
-                                mge_name_set = mge_nt_lookup_dict[chromo][nt]
-                                                                
-                                for mge_name in mge_name_set:                                    
-                                    if mge_name not in feature_dict:
-                                        feature_dict[mge_name] = {
-                                            'chromo' : chromo,
-                                            'mge_region': set(), 
-                                            'anchor_loci': {},
-                                            'uid': set(),
-                                            'mge_mapq':[],
-                                            'anchors': {},
-                                            'anchor_mapq':[]}
-                                        
-                                    feature_dict[mge_name]['mge_region'] = mge_name_to_region_dict[mge_name]
-                                    feature_dict[mge_name]['uid'].add(uid)
-                                    feature_dict[mge_name]['mge_mapq'].append(mapq)
-                                    
-                                    
-                                    if uid not in selected_uid_dict:
-                                        selected_uid_dict[uid] = set()
-                                    
-                                    selected_uid_dict[uid].add(mge_name)
-                                                                                    
-        read_file.close()
-        
-        print('Reparsing ', read_file_name)
-        
-        read_file = open(read_file_name)
-
-        for line in read_file:
-            line = line.strip()
-            
-            if line[0]!='@':                
-                uid = line.split('\t')[0]
-                
-                if uid in selected_uid_dict:
-                    chromo = line.split('\t')[2]
-                    start = int(line.split('\t')[3])
-                    mapq = int(line.split('\t')[4])
-                    cigar = line.split('\t')[5]
-                                        
-                    #filter by qscore should suppress non-unique mapping
-                    if mapq >= mapq_val:
-                        try:
-                            stop = start + parse_cigar(cigar, 'last_match')
-                        except:
-                            print('parse_cigar error')
-                            print(start, cigar, parse_cigar(cigar, 'last_match'))
-                            1/0
-                            
-                        for mge_name in selected_uid_dict[uid]:
-                            mge_chromo = feature_dict[mge_name]['chromo']
-                            mge_region = feature_dict[mge_name]['mge_region']
-                                                    
-                            #edge case to make sure we aren't counting those reads that self map.
-                            process = True
-                            if chromo == mge_chromo:
-                                for nt in range((start - gap), (stop + gap +1)):
-                                    if nt in range(min(mge_region), max(mge_region)):
-                                        process = False                           
-                            
-                            if process:
-                                feature_dict[mge_name]['anchor_mapq'].append(mapq)
-                                
-                                if chromo not in feature_dict[mge_name]['anchor_loci']:
-                                    feature_dict[mge_name]['anchor_loci'][chromo] = {}
-                                    
-                                for nt in range(start, stop + 1):
-                                    if nt not in feature_dict[mge_name]['anchor_loci'][chromo]:
-                                        feature_dict[mge_name]['anchor_loci'][chromo][nt] = set()
-                                        
-                                    feature_dict[mge_name]['anchor_loci'][chromo][nt].add(uid)
-                                        
-    print('Associating reads ... ')
-                            
-    for mge_name in feature_dict:
-        for chromo in feature_dict[mge_name]['anchor_loci']:
-            nt_deets = feature_dict[mge_name]['anchor_loci'][chromo]
-            
-            if min(nt_deets) + gap >= max(nt_deets):
-                num = len(feature_dict[mge_name]['anchors'])
-                locus = ('{}:{}-{}').format(chromo, min(nt_deets), max(nt_deets))
-                ct = count_uids_in_region(min(nt_deets), 
-                                          max(nt_deets), 
-                                          feature_dict[mge_name]['anchor_loci'][chromo])
-                feature_dict[mge_name]['anchors'][num] = (locus, ct)                
-            else:
-                region_set = mge_combine_regions(nt_deets)
-                
-                for region in region_set:
-                    num = len(feature_dict[mge_name]['anchors'])
-                    locus = ('{}:{}-{}').format(chromo, min(region), max(region))
-                    ct = count_uids_in_region(min(nt_deets), 
-                                          max(nt_deets), 
-                                          feature_dict[mge_name]['anchor_loci'][chromo])
-                
-                feature_dict[mge_name]['anchors'][num] = (locus, ct)
-                
-    region_to_feature_dict = {}
-    
-    for mge_name in feature_dict:
-        chromo = feature_dict[mge_name]['chromo']
-        mge_region = feature_dict[mge_name]['mge_region']
-
-        median_mge_mapq = np.median(feature_dict[mge_name]['mge_mapq'])        
-        mean_mge_mapq = np.mean(feature_dict[mge_name]['mge_mapq'])
-        std_mge_mapq = np.std(feature_dict[mge_name]['mge_mapq'])
-
-        median_anchor_mapq = np.median(feature_dict[mge_name]['anchor_mapq'])
-        mean_anchor_mapq = np.mean(feature_dict[mge_name]['anchor_mapq'])
-        std_anchor_mapq = np.std(feature_dict[mge_name]['anchor_mapq'])
-        
-        if chromo not in region_to_feature_dict:
-            region_to_feature_dict[chromo] = {}
-            
-        if mge_region not in region_to_feature_dict[chromo]:
-            region_to_feature_dict[chromo][mge_region] = {'rel_anchor':0,
-                                                          'ttl_anchor':0,
-                                                          'mge':0}
-        read_ct = 0
-        max_read_ct = 0
-        for num in feature_dict[mge_name]['anchors']:
-            num_reads = feature_dict[mge_name]['anchors'][num][1]
-            read_ct += num_reads
-            
-            if num_reads > max_read_ct:
-                max_read_ct = num_reads
-                
-        region = feature_dict[mge_name]['mge_region']
-        length = max(max(region) - min(region),1)
-        
-        region_to_feature_dict[chromo][mge_region]['median_mge_mapq'] = median_mge_mapq
-        region_to_feature_dict[chromo][mge_region]['mean_mge_mapq'] = mean_mge_mapq
-        region_to_feature_dict[chromo][mge_region]['std_mge_mapq'] = std_mge_mapq
-        region_to_feature_dict[chromo][mge_region]['median_anchor_mapq'] = median_anchor_mapq
-        region_to_feature_dict[chromo][mge_region]['mean_anchor_mapq'] = mean_anchor_mapq
-        region_to_feature_dict[chromo][mge_region]['std_anchor_mapq'] = std_anchor_mapq
-        region_to_feature_dict[chromo][mge_region]['length'] = length
-        region_to_feature_dict[chromo][mge_region]['rel_anchor'] = (max_read_ct**2) / (max(read_ct,1) * length)
-        region_to_feature_dict[chromo][mge_region]['rel_ttl_anchor'] = read_ct/length
-        region_to_feature_dict[chromo][mge_region]['rel_mge'] = len(feature_dict[mge_name]['uid'])/length
-        region_to_feature_dict[chromo][mge_region]['anchor'] = (max_read_ct**2) / (max(read_ct,1))
-        region_to_feature_dict[chromo][mge_region]['ttl_anchor'] = read_ct
-        region_to_feature_dict[chromo][mge_region]['mge'] = len(feature_dict[mge_name]['uid'])
-
-
-            
-    return(feature_dict, region_to_feature_dict)
-                        
-""" Step Three """
-if args.mge_file:
-    """
-    #    
-    """
-    resource_dict = io_load()
-    read_type_list = resource_dict['read_types']
-    discordant_sam_file = resource_dict['discordant_sam_file']
-    split_sam_file = resource_dict['split_sam_file']
-        
-    each_sample = resource_dict['run_name']
-    
-    chromo_size_p = pickle_loader(resource_dict['chromo_size'], 'dict')
-    
-    chromo_list = []
-    for chromo in chromo_size_p:
-        chromo_list.append(chromo)     
-        
-    if args.CNV_min_length:
-        min_length = int(args.CNV_min_length)
-    else:
-        min_length = 300
-        
-    if args.max_gap:
-        gap = int(args.max_gap)
-    else:
-        gap = 300
-                        
-    file_name_lookup = []
-    depth_dict = {}
-    
-    defined_dict = {}
-    
-    if args.known_mge:
-        infile = open(args.known_mge)
-        
-        for line in infile:
-            #{chromo}\tmugio\tcandidate_TE\t'
-            #               '{start}\t{stop}\t{tea}\t.\t.\t'
-            #               'ID={name}; score={score}; TEa={tea}; is uid={is_uid}
-            
-            line = line.strip()
-            chromo, _a, _b, start, stop, tea, _sign, _dot, deets = line.split('\t')
-            
-            tea = bool(int(tea))
-            
-            region = (int(start), int(stop))
-            
-            if chromo not in defined_dict:
-                defined_dict[chromo] = {}
-                
-            if region not in defined_dict[chromo]:
-                defined_dict[chromo][region] = tea
-                
-            else:
-                if defined_dict[chromo][region] == False:
-                    defined_dict[chromo][region] = tea
-    
-    feature_dict, region_to_feature_dict = build_edge_read_set(discordant_sam_file, split_sam_file)
-            
-    mge_trace_builder(defined_dict, region_to_feature_dict, feature_dict)
-
-        
         
 """ Step Four"""
 if args.map_reads:
@@ -3921,12 +2802,28 @@ if args.map_reads:
         return(chromo, start, stop, qscore, cigar)
             
     def find_hypo(locus_to_hypo_lookup, chromo, start, stop):
-        for each_nt in range(start, stop+1):
-            region_name = str(chromo + '_' + str(each_nt))
+        for is_nt in (range(start, stop+1)):
+            region_name = str(chromo + '_' + str(is_nt))
 
             if region_name in locus_to_hypo_lookup:
-                hypo_id = locus_to_hypo_lookup[region_name]
-                return(hypo_id)
+                #hypo_id = locus_to_hypo_lookup[region_name]
+                return(locus_to_hypo_lookup[region_name])
+        
+        # min_nt = min(range(start, stop+1))
+        
+        # region_name = str(chromo + '_' + str(min_nt))
+
+        # if region_name in locus_to_hypo_lookup:
+        #     #hypo_id = locus_to_hypo_lookup[region_name]
+        #     return(locus_to_hypo_lookup[region_name])
+        
+        # max_nt = max(range(start, stop+1))
+        
+        # region_name = str(chromo + '_' + str(max_nt))
+
+        # if region_name in locus_to_hypo_lookup:
+        #     #hypo_id = locus_to_hypo_lookup[region_name]
+        #     return(locus_to_hypo_lookup[region_name])
                 
         #if that doesn't work:
         print('error attempting to map to unassigned region')
@@ -3939,11 +2836,14 @@ if args.map_reads:
         process_brks = True
         if chromo in region_filter_dict:
             region_set = region_filter_dict[chromo]
+            
+            
             for nt in range((start-flank_nt), (stop+flank_nt+1)):
                 if nt in region_set:
                     process_brks=False
                     ancestor_filter+=1
                     return(process_brks, ancestor_filter)
+                
         return(process_brks, ancestor_filter)
     
     def break_walk(chromo_walk_dict, chromo, start, stop):
@@ -4032,59 +2932,89 @@ if args.map_reads:
                 p_chromo = uid_align[0]
                 p_start = uid_align[1]
                 p_stop = uid_align[2]
+                
                 if (p_chromo != chromo) or (p_start != start) or (p_stop != stop):
                     print('uni_uid_instance collision', uni_uid_instance, uid_align, alignment_map[uni_uid_instance])
         
         return(alignment_map, hypothesis_map, ancestor_filter)
     
-    def refine_alignment(uni_uid, alignments, alignment_map, runmode, locus_to_hypo_lookup, refined_map):
+    def refine_alignment(uni_uid, alignment, alignment_map, runmode, locus_to_hypo_lookup, refined_map):
         q_uid = ('{}_{}').format(runmode, uni_uid)
         
-        if runmode == 'discordant':
-            if len(alignments) == 2:
-                hypo_id_list = []
+        if runmode == 'discordant' or runmode == 'split':             
+            if alignment:
+                # temp_uni_uid_dict = {}
+                
+                #for each_instance in alignments:
+                    #so this asks if the 
+                chromo, start, stop, qscore, cigar = alignment_map[alignment]
+                breakpoint_hypothesis = find_hypo(locus_to_hypo_lookup, chromo, start, stop)
 
-                for each_instance in alignments:
-                    chromo, start, stop, qscore, cigar = alignment_map[each_instance]
-                    hypo_id_list.append(find_hypo(locus_to_hypo_lookup, chromo, start, stop))
-                                
-                hypo_id_list.sort()
-                breakpoint_hypothesis = ('{}_{}').format(hypo_id_list[0],hypo_id_list[1])
-                                
-                if breakpoint_hypothesis in refined_map:
-                    refined_map[breakpoint_hypothesis] += [q_uid]
-                else:
-                    refined_map[breakpoint_hypothesis] = [q_uid]
-                    
-        if runmode == 'split':
-            if len(alignments) > 1:
-                temp_uni_uid_dict = {}
+                if breakpoint_hypothesis not in refined_map:
+                    refined_map[breakpoint_hypothesis] = set()
+                
+                refined_map[breakpoint_hypothesis].add(q_uid)
+                
+                # uni_uid, instance = alignment.split('~')
     
-                for each_instance in alignments:
-                    chromo, start, stop, qscore, cigar = alignment_map[each_instance]
-                    hypo_id = find_hypo(locus_to_hypo_lookup, chromo, start, stop)
+                # if uni_uid not in temp_uni_uid_dict:
+                #     temp_uni_uid_dict[uni_uid] = []
+                
+                # temp_uni_uid_dict[uni_uid].append(hypo_id)
+                
+                # if len(temp_uni_uid_dict) > 1:
+                #     for uni_uid, hypo_id_list in temp_uni_uid_dict.items():
+                #         for x in range(min(hypo_id_list)-1):
+                #             for y in range(x+1,max(hypo_id_list)):
+                #                 id_list = [hypo_id_list[x], hypo_id_list[y]]
+                #                 id_list.sort()
+                #                 breakpoint_hypothesis = ('{}_{}').format(hypo_id_list[0],hypo_id_list[1])
                     
-                    uni_uid, instance = each_instance.split('~')
+                #                 if breakpoint_hypothesis not in refined_map:
+                #                     refined_map[breakpoint_hypothesis] = []
+                                
+                #                 refined_map[breakpoint_hypothesis].append(q_uid)
+                #                 print('refined_map')
+                #                 1/0
+                # else:
+                # for uni_uid, hypo_id in temp_uni_uid_dict.items():
+                #     breakpoint_hypothesis = ('{}').format(hypo_id)
+        
+                #     if breakpoint_hypothesis not in refined_map:
+                #         refined_map[breakpoint_hypothesis] = []
+                    
+                #     refined_map[breakpoint_hypothesis].append(q_uid)
+                    
+        #FUCK 01.24.23
+        # if runmode == 'split':
+        #     if len(alignment) > 1:
+        #         temp_uni_uid_dict = {}
+    
+        #         for each_instance in alignments:
+        #             chromo, start, stop, qscore, cigar = alignment_map[each_instance]
+        #             hypo_id = find_hypo(locus_to_hypo_lookup, chromo, start, stop)
+                    
+        #             uni_uid, instance = each_instance.split('~')
 
-                    if uni_uid not in temp_uni_uid_dict:
-                        temp_uni_uid_dict[uni_uid] = [hypo_id]
-                    else:
-                        temp_uni_uid_dict[uni_uid] += [hypo_id]
+        #             if uni_uid not in temp_uni_uid_dict:
+        #                 temp_uni_uid_dict[uni_uid] = [hypo_id]
+        #             else:
+        #                 temp_uni_uid_dict[uni_uid] += [hypo_id]
                 
-                for uni_uid, hypo_id_list in temp_uni_uid_dict.items():
-                    for x in range(len(hypo_id_list)-1):
-                        for y in range(x+1,len(hypo_id_list)):
-                            id_list = [hypo_id_list[x], hypo_id_list[y]]
-                            id_list.sort()
-                            breakpoint_hypothesis = ('{}_{}').format(hypo_id_list[0],hypo_id_list[1])
+        #         for uni_uid, hypo_id_list in temp_uni_uid_dict.items():
+        #             for x in range(min(hypo_id_list)-1):
+        #                 for y in range(x+1,max(hypo_id_list)):
+        #                     id_list = [hypo_id_list[x], hypo_id_list[y]]
+        #                     id_list.sort()
+        #                     breakpoint_hypothesis = ('{}_{}').format(hypo_id_list[0],hypo_id_list[1])
                 
-                            if breakpoint_hypothesis in refined_map:
-                                refined_map[breakpoint_hypothesis] += [q_uid]
-                            else:
-                                refined_map[breakpoint_hypothesis] = [q_uid]
+        #                     if breakpoint_hypothesis in refined_map:
+        #                         refined_map[breakpoint_hypothesis] += [q_uid]
+        #                     else:
+        #                         refined_map[breakpoint_hypothesis] = [q_uid]
                                    
         return(refined_map)
-                
+    
     for runmode in read_type_list:        
         if runmode == 'discordant':
             print('Parsing discordant reads...')
@@ -4163,7 +3093,6 @@ if args.map_reads:
                         
         read_file.close()
         
-        
     for runmode in read_type_list:
         pull_from_rd_1 = set()
         pull_from_rd_2 = set()
@@ -4238,7 +3167,7 @@ if args.map_reads:
                         uid_source_dict[runmode].add(uni_uid)
                             
         rd_file.close() 
-        
+                
     if len(fastq_1_list) > 0:
         fastq_1_file = open(fastq_1_filename)
         uniuid_to_seq_dict, uniuid_to_phred_dict = parse_fastq(fastq_1_filename, '.1', fastq_1_list, uniuid_to_seq_dict, uniuid_to_phred_dict)
@@ -4248,7 +3177,6 @@ if args.map_reads:
         uniuid_to_seq_dict, uniuid_to_phred_dict = parse_fastq(fastq_2_filename, '.2', fastq_2_list, uniuid_to_seq_dict, uniuid_to_phred_dict)
                       
     pickle_out = ("{}/uniuid_to_seq_dict.p").format(pickles_dir)
-    print(pickle_out)
     pickle.dump(uniuid_to_seq_dict, open(pickle_out, 'wb'))
     
     pickle_out = ("{}/uniuid_to_phred_dict.p").format(pickles_dir)
@@ -4256,6 +3184,9 @@ if args.map_reads:
     
     pickle_out = ("{}/uid_source_dict.p").format(pickles_dir)
     pickle.dump(uid_source_dict, open(pickle_out, 'wb'))
+    
+    pickle_out = ("{}/uid_deets_dict.p").format(pickles_dir)
+    pickle.dump(uid_deets_dict, open(pickle_out, 'wb'))
     
     print('Mapping regions...')
     """ This component converts the two sides of the split reads into a pair of addresses
@@ -4265,23 +3196,27 @@ if args.map_reads:
     ancestor_filter = 0
     
     for runmode in read_type_list:
-        uni_uid_set = uid_source_dict[runmode]
-        
-        if runmode == 'discordant':
-            print('Running discordant read mode on ' + str(len(uni_uid_set)) + ' reads ...')
-                                
-        if runmode == 'split':
-            print('Running split read mode on ' + str(len(uni_uid_set)) + ' reads ...')
-                        
-        for uni_uid in uni_uid_set:
-            deets = uid_deets_dict[uni_uid]
-
-            if len(deets) > 1:
-                for uid_align in deets:
+        if runmode in uid_source_dict:
+            uni_uid_set = uid_source_dict[runmode]
+            
+            if runmode == 'discordant':
+                print('Running discordant read mode on ' + str(len(uni_uid_set)) + ' reads ...')
+                                    
+            if runmode == 'split':
+                print('Running split read mode on ' + str(len(uni_uid_set)) + ' reads ...')
+                            
+            for uni_uid in uni_uid_set:
+                deets = uid_deets_dict[uni_uid]
+    
+                if len(deets) > 1:
+                    for uid_align in deets:
+                        alignment_map, hypothesis_map, ancestor_filter = map_alignments(uni_uid, uid_align, alignment_map, hypothesis_map, ancestor_filter)
+                else:
+                    uid_align = deets[0]
                     alignment_map, hypothesis_map, ancestor_filter = map_alignments(uni_uid, uid_align, alignment_map, hypothesis_map, ancestor_filter)
-            else:
-                uid_align = deets[0]
-                alignment_map, hypothesis_map, ancestor_filter = map_alignments(uni_uid, uid_align, alignment_map, hypothesis_map, ancestor_filter)
+        
+    pickle_out = ("{}/hypothesis_map.p").format(pickles_dir)
+    pickle.dump(hypothesis_map, open(pickle_out, 'wb'))
     
     outline = ('\t{} reads mapped to {} non-unique locations with {} reads filtered.').format(len(hypothesis_map), len(alignment_map), ancestor_filter)           
     print(outline)
@@ -4301,7 +3236,10 @@ if args.map_reads:
     hypo_ct = 0
     locus_to_hypo_lookup = {} 
     
-    for each_chromo, aligned_set in chromo_walk_dict.items():               
+    for each_chromo, aligned_set in chromo_walk_dict.items():  
+        # if each_chromo not in locus_to_hypo_lookup:
+        #     locus_to_hypo_lookup[each_chromo] = {}
+             
         if len(aligned_set) > 0:
             min_chromo = min(aligned_set)
             max_chromo = max(aligned_set)
@@ -4328,56 +3266,104 @@ if args.map_reads:
             print('error in aligned set')
             print(each_chromo, aligned_set)
             1/0
+            
+    pickle_out = ("{}/locus_to_hypo_lookup.p").format(pickles_dir)
+    pickle.dump(locus_to_hypo_lookup, open(pickle_out, 'wb'))
+    
+    pickle_out = ("{}/hypo_to_locus_lookup.p").format(pickles_dir)
+    pickle.dump(hypo_to_locus_lookup, open(pickle_out, 'wb'))
 
     print('Refining hypotheses ...')                 
     refined_map = {}
     uids_that_were_filtered = []
     
     for runmode in read_type_list:
-        uni_uid_set = uid_source_dict[runmode]
-        
-        for uni_uid in uni_uid_set:
-            uid = uni_uid.split('.')[0]
-            if uid in hypothesis_map:
-                alignments = hypothesis_map[uid]
-                refined_map = refine_alignment(uni_uid, hypothesis_map[uid], alignment_map, runmode, locus_to_hypo_lookup, refined_map)
-            else:
-                uids_that_were_filtered.append(uid)
-                            
+        print(runmode)
+        processed_alignments = set()
+        prev_ct = 0
+        uni_ct = 0 
+        if runmode in uid_source_dict:
+            uni_uid_set = uid_source_dict[runmode]
+                    
+            for uni_uid in uni_uid_set:
+                uid = uni_uid.split('.')[0]
+                
+                uni_ct += 1
+                
+                if uid in hypothesis_map:
+                    alignments_set = set(hypothesis_map[uid])
+                    
+                    if alignments_set != processed_alignments:
+                    
+                        for alignment in alignments_set:
+                            if alignment not in processed_alignments:
+                                processed_alignments.add(alignment)
+                                
+                                before = len(refined_map)
+                                refined_map = refine_alignment(uni_uid, alignment, alignment_map, runmode, locus_to_hypo_lookup, refined_map)
+                                after = len(refined_map)
+                                
+                                if before != after:
+                                    print('before, after', before, after)
+                    
+                else:
+                    uids_that_were_filtered.append(uid)
+                
+                pct_ct = round(100*uni_ct/len(uni_uid_set))
+                if pct_ct % 10 == 0:
+                    if pct_ct != prev_ct:
+                        prev_ct = pct_ct
+                        print(pct_ct)
+                    
+    print('uids_that_were_filtered: ', uids_that_were_filtered)
+    
+    pickle_out = ("{}/refined_map.p").format(pickles_dir)
+    pickle.dump(refined_map, open(pickle_out, 'wb'))
+                                
     #define outputs
     break_tab = ('{}/break_bt.tab').format(temp_dir)
     break_bed = ('{}/break_bd.bed').format(temp_dir)
-    dbreak_tab = ('{}/dbreak_dbt.tab').format(temp_dir)
-    dbreak_bed = ('{}/dbreak_dbd.bed').format(temp_dir)
     #
     break_tab_file = open(break_tab,'w')
     break_bed_file = open(break_bed,'w')
-    dbreak_tab_file = open(dbreak_tab, 'w')
-    dbreak_bed_file = open(dbreak_bed, 'w')
     
     refined_ct = 0
     dbreak_ct = 0
     
     for breakpoint_hypothesis, uid_list in refined_map.items():
-        process_brks_1, process_brks_2 = True, True
+        # print(breakpoint_hypothesis)
+        # process_brks_1, process_brks_2 = True, True
         
-        hypo_side_left = int(breakpoint_hypothesis.split('_')[0])
-        hypo_side_right = int(breakpoint_hypothesis.split('_')[1])
+        # hypo_side_left = int(breakpoint_hypothesis.split('_')[0])
+        # hypo_side_right = int(breakpoint_hypothesis.split('_')[1])
         
-        chromo_l, start_l, stop_l = hypo_to_locus_lookup[hypo_side_left]
-        chromo_r, start_r, stop_r = hypo_to_locus_lookup[hypo_side_right]
+        # chromo_l, start_l, stop_l = hypo_to_locus_lookup[hypo_side_left]
+        # chromo_r, start_r, stop_r = hypo_to_locus_lookup[hypo_side_right]
+        
+        # if args.filter_object:
+        #     process_brks_1, ancestor_filter = filter_regions(chromo_l, start_l, stop_l, region_filter_dict, ancestor_filter)
+        #     process_brks_2, ancestor_filter = filter_regions(chromo_r, start_r, stop_r, region_filter_dict, ancestor_filter)
+                
+        # if process_brks_1 and process_brks_2:
+            
+        print(breakpoint_hypothesis)
+        process_brks_1 = True
+        
+        hypo_side = int(breakpoint_hypothesis)
+                
+        chromo_l, start_l, stop_l = hypo_to_locus_lookup[hypo_side]
+        #chromo_r, start_r, stop_r = hypo_to_locus_lookup[hypo_side_right]
         
         if args.filter_object:
             process_brks_1, ancestor_filter = filter_regions(chromo_l, start_l, stop_l, region_filter_dict, ancestor_filter)
-            process_brks_2, ancestor_filter = filter_regions(chromo_r, start_r, stop_r, region_filter_dict, ancestor_filter)
+            #process_brks_2, ancestor_filter = filter_regions(chromo_r, start_r, stop_r, region_filter_dict, ancestor_filter)
                 
-        if process_brks_1 and process_brks_2:
-            
+        if process_brks_1:
             
             if len(uid_list) > 1:
                 split_ct = 0
                 disco_ct = 0
-                #soft_ct = 0
+
                 processed_list = []
                 uid_str = ''
                 
@@ -4388,7 +3374,8 @@ if args.map_reads:
                         runmode, uid = each.split('_')
                         
                     else:
-                        runmode, uid = each.split('_', 1)
+                        #edit: 01.24.23
+                        runmode, uid = each.rsplit('_', 1)
                         
                     if uid not in temp_uid_dict:
                         temp_uid_dict[uid] = set()
@@ -4416,51 +3403,34 @@ if args.map_reads:
                     else:
                         combined_weight = (d_weight + s_weight)
                                             
-                    """generate two file sets - one set contains those hypothetical breaks with split read support
-                    while the other set only has significant values of discordant reads available"""
-        
+                    """generate two file sets
+                    one is a text tab file the other is a bed file that can be viewed in IGV
+                    """
                     if ((s_weight > 0) and (combined_weight > score)):
                         refined_ct += 1
-                        if hypo_side_left != hypo_side_right:                
-                            outline = ('{}_left\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n').format(breakpoint_hypothesis, chromo_l, start_l, stop_l, chromo_r, start_r, stop_r, combined_weight, uid_str)
-                            break_tab_file.write(outline)
-                            outline = ('{}\t{}\t{}\t{}_left\t{}\t.\n').format(chromo_l, start_l, stop_l, breakpoint_hypothesis, combined_weight)
-                            break_bed_file.write(outline)
+                        # if hypo_side_left != hypo_side_right:                
+                        #     outline = ('{}_left\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n').format(breakpoint_hypothesis, chromo_l, start_l, stop_l, chromo_r, start_r, stop_r, combined_weight, uid_str)
+                        #     break_tab_file.write(outline)
+                        #     outline = ('{}\t{}\t{}\t{}_left\t{}\t.\n').format(chromo_l, start_l, stop_l, breakpoint_hypothesis, combined_weight)
+                        #     break_bed_file.write(outline)
                             
-                            outline = ('{}_right\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n').format(breakpoint_hypothesis, chromo_r, start_r, stop_r, chromo_l, start_l, stop_l, combined_weight, uid_str)
-                            break_tab_file.write(outline)
-                            outline = ('{}\t{}\t{}\t{}_right\t{}\t.\n').format(chromo_r, start_r, stop_r, breakpoint_hypothesis, combined_weight)
-                            break_bed_file.write(outline)
+                        #     outline = ('{}_right\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n').format(breakpoint_hypothesis, chromo_r, start_r, stop_r, chromo_l, start_l, stop_l, combined_weight, uid_str)
+                        #     break_tab_file.write(outline)
+                        #     outline = ('{}\t{}\t{}\t{}_right\t{}\t.\n').format(chromo_r, start_r, stop_r, breakpoint_hypothesis, combined_weight)
+                        #     break_bed_file.write(outline)
                             
-                        else:
-                            outline = ('{}_both\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n').format(breakpoint_hypothesis, chromo_l, start_l, stop_l, chromo_l, start_l, stop_l, combined_weight, uid_str)
-                            break_tab_file.write(outline)
-                            outline = ('{}\t{}\t{}\t{}_both\t{}\t.\n').format(chromo_l, start_l, stop_l, breakpoint_hypothesis, combined_weight)
-                            break_bed_file.write(outline)
+                        #else:
+                        outline = ('{}_both\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n').format(breakpoint_hypothesis, chromo_l, start_l, stop_l, chromo_l, start_l, stop_l, combined_weight, uid_str)
+                        break_tab_file.write(outline)
+                        outline = ('{}\t{}\t{}\t{}_both\t{}\t.\n').format(chromo_l, start_l, stop_l, breakpoint_hypothesis, combined_weight)
+                        break_bed_file.write(outline)
                             
-                    if ((split_ct == 0) and d_weight > 3*disco_score):
-                        dbreak_ct += 1
-                        if hypo_side_left != hypo_side_right:                
-                            outline = ('{}_left\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n').format(breakpoint_hypothesis, chromo_l, start_l, stop_l, chromo_r, start_r, stop_r, combined_weight, uid_str)
-                            dbreak_tab_file.write(outline)
-                            outline = ('{}\t{}\t{}\t{}_left\t{}\t.\n').format(chromo_l, start_l, stop_l, breakpoint_hypothesis, combined_weight)
-                            dbreak_bed_file.write(outline)
+                        print('break_tab', outline)
                             
-                            outline = ('{}_right\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n').format(breakpoint_hypothesis, chromo_r, start_r, stop_r, chromo_l, start_l, stop_l, combined_weight, uid_str)
-                            dbreak_tab_file.write(outline)
-                            outline = ('{}\t{}\t{}\t{}_right\t{}\t.\n').format(chromo_r, start_r, stop_r, breakpoint_hypothesis, combined_weight)
-                            dbreak_bed_file.write(outline)
-                            
-                        else:
-                            outline = ('{}_both\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n').format(breakpoint_hypothesis, chromo_l, start_l, stop_l, chromo_l, start_l, stop_l, combined_weight, uid_str)
-                            dbreak_tab_file.write(outline)
-                            outline = ('{}\t{}\t{}\t{}_both\t{}\t.\n').format(chromo_l, start_l, stop_l, breakpoint_hypothesis, combined_weight)
-                            dbreak_bed_file.write(outline)
+
             
     break_tab_file.close()
-    break_bed_file.close()
-    dbreak_tab_file.close()
-    dbreak_bed_file.close()    
+    break_bed_file.close() 
 
     outline = ('\t{} significant split hypotheses have been resolved to {} split read supported breakpoints.').format(len(hypothesis_map), refined_ct)
     print(outline)
@@ -4468,8 +3438,7 @@ if args.map_reads:
         outline = ('\tIncluding {} discordant read supported breakpoints.').format(dbreak_ct)
         print(outline)
             
-    pickle_out = ("{}/refined_map.p").format(pickles_dir)
-    pickle.dump(refined_map, open(pickle_out, 'wb'))
+
             
 """ Step Five """
 if args.make_filter:
@@ -4556,12 +3525,13 @@ if args.build_sequence:
     uniuid_to_seq_dict, uniuid_to_phred_dict = io_load('fq')
         
     break_tab = ('{}/break_bt.tab').format(temp_dir)   
-    dbreak_tab = ('{}/dbreak_dbt.tab').format(temp_dir)
+    #dbreak_tab = ('{}/dbreak_dbt.tab').format(temp_dir)
                                
     """parse_brks:
     This recovers the loci from the hypothesized breakpoints identified in earlier
     steps.
     """    
+    
     print('Starting breakpoint testing...')
     parse_brks(break_tab)
 
@@ -4619,7 +3589,6 @@ if args.build_sequence:
             #gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict = parse_json(json_long_file_name, contig_seq_dict, gff_list_dict, gff_rank_dict, blast_read_aligned_sections_dict, blast_genome_aligned_regions_dict, gff_uid_dict)
 
     gff_set, gff_header, vcf_set, vcf_header = summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict)
-    
 
     resource_pickle_name = ('{}/hypothesis_dict.p').format(pickles_dir)
     with open(resource_pickle_name, 'wb') as file:
@@ -4708,115 +3677,3 @@ if args.separate_by_strand:
     
     convert_sort(plus_file_name)
     convert_sort(minus_file_name)
-    
-if args.find_breakpoints:
-    #output_dir, output_file
-    run_name = args.run_name
-    
-    bash_file_name = output_file.rsplit('.', 1)[0] + '.sh'
-    
-    bash_file = open(bash_file_name, 'w')
-            
-    outline = ('python erisapfel.py -make -fa {ref_fa}'
-               ' -fastq_1 {fastq_1} -fastq_2 {fastq_2}'
-               ' -run_name {run_name}\n').format(
-                   ref_fa = args.fa_file, 
-                   fastq_1 = args.fastq_1,
-                   fastq_2 = args.fastq_2,
-                   run_name = run_name)
-                  
-    bash_file.write(outline)
-    
-    outline = ('python erisapfel.py -depth'
-               ' -run_name {run_name}\n').format(
-                   run_name = run_name)
-    bash_file.write(outline)
-    
-    outline = ('python erisapfel.py -peaks'
-               ' -run_name {run_name}\n').format(
-                   run_name = run_name)
-    bash_file.write(outline)
-                   
-    
-    if args.make_filter:
-        filter_bed = args.filter_bed
-        
-        outline = ('python erisapfel.py -filter -filter_bed {filter_bed} -o {run_name}_filter.p\n').format(
-            filter_bed = filter_bed, 
-            run_name = run_name)
-        
-        bash_file.write(outline)
-        
-        outline = ('python erisapfel.py -map -run_name {run_name} --filter_object {run_name}_filter.p\n').format(
-            run_name = run_name)
-        
-        bash_file.write(outline)
-    
-    outline = ('python erisapfel.py -map'
-               ' -run_name {run_name}\n').format(
-                   run_name = run_name)
-    bash_file.write(outline)
-    
-    
-    outline = ('python erisapfel.py -localseq'
-               ' -run_name {run_name}\n').format(
-                   run_name = run_name)
-    bash_file.write(outline)
-                                    
-    monolog = ('\tRunning breakpoint identification using {bfn} ...\n').format(bfn = bash_file_name)
-    print(monolog)    
-    bashCommand = ('bash {bfn}').format(bfn = bash_file_name) 
-    print(bashCommand)       
-    subprocess.run([bashCommand], stderr=subprocess.STDOUT, shell=True)
-    
-if args.model_selection or args.model_train or args.model_predict:
-    #TODO future version    
-    from sklearn.preprocessing import MinMaxScaler
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.preprocessing import Normalizer
-    from sklearn.preprocessing import PowerTransformer
-    from sklearn.preprocessing import QuantileTransformer
-    
-    from sklearn.model_selection import train_test_split
-
-    from sklearn.metrics import confusion_matrix
-    from sklearn.metrics import f1_score
-    from imblearn.metrics import geometric_mean_score
-    
-    from sklearn.neighbors import KNeighborsClassifier
-    from sklearn.naive_bayes import GaussianNB
-    from sklearn.naive_bayes import ComplementNB
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.ensemble import RandomForestClassifier
-    
-    from imblearn import FunctionSampler
-    from imblearn.under_sampling import RandomUnderSampler, NearMiss, AllKNN
-    from imblearn.over_sampling import ADASYN, RandomOverSampler, SMOTE
-    from imblearn.pipeline import make_pipeline
-
-if args.model_selection:    
-    mge_file_name = (args.input_file)
-    
-    value_df_object = mge_to_model_parser(mge_file_name)
-                    
-    model_selection(value_df_object)
-    
-if args.model_train:    
-    mge_file_name = (args.input_file)
-    
-    value_df_object = mge_to_model_parser(mge_file_name)
-                    
-    topmodel = model_train(value_df_object) 
-    
-if args.model_predict:
-    resource_dict = io_load()        
-    sample = resource_dict['run_name']
-    
-    feature_pickle = ('{}/{}_feature_values.p').format(final_output_dir, sample)
-    value_df_object = {}
-    value_df_object[sample] = feature_pickle
-                                
-    topmodel = model_predict(value_df_object) 
-    
-
-                            
