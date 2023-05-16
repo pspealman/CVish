@@ -1,9 +1,22 @@
-# erisapfel
- A split and discordant derived structural variant breakpoint identifier for evolved populations. 
+# CVish
+A **C**opy Number **V**ariant and Structural Variant finder for short read sequencing that uses split and discordant reads as well read depth to identify potential breakpoints. 
 
 _Important note for NYU HPC users:
  Load all necessary modules via:
 	 source module_load.sh_
+
+## Requirements
+CVish intends to be a requirement lite tool and as such is contained entirely in single python script. 
+It does require the following programs to be installed in the environment:
+
+python		(tested on version: 3.8.6)
+bwa		(tested on version: 0.7.17)
+samtools	(tested on version: 1.14)
+bedtools	(tested on version: 2.29.2)
+blast		(tested on version: 2.11.0)
+samblaster	(tested on version: 0.1.26)
+mafft		(tested on version: 7.475)
+emboss		(tested on version: 6.6.0)
 
 <!--
 ## How to use:
