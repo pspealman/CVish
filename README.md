@@ -18,7 +18,6 @@ It requires the following programs to be installed in the environment:
 * mafft		(tested on version: 7.475)
 * emboss	(tested on version: 6.6.0)
 
-<!--
 ## How to use:
  For demonstration use:
   ```
@@ -26,9 +25,8 @@ It requires the following programs to be installed in the environment:
   ```
  To run an install test using defaults, use:
  ```
- python erisapfel.py -test
+  python erisapfel.py -test
  ```
---->
 
 ## Commands:
  ### -run
@@ -40,10 +38,12 @@ It requires the following programs to be installed in the environment:
  * Demo run on ancestor strain:
  ```
    python cvish.py -run -fa demo/demo.fna -fastq_1 demo/n01_ancestor.fastq.gz -fastq_2 demo/n02_ancestor.fastq.gz -config demo/demo_config.tsv -run_name demo_anc
+   nano results/demo_anc/output/demo_anc_SV_CNV.gff
  ```
   * Demo run on evolved strain: 
  ```
   python cvish.py -run -fa demo/demo.fna -fastq_1 demo/n01_evolved.fastq.gz -fastq_2 demo/n02_evolved.fastq.gz -config demo/demo_evo_config.tsv -filter_gff results/demo_anc/output/demo_anc_SV_CNV.gff -run_name demo_evo
+  nano results/demo_evo/output/demo_evo_SV_CNV.gff
  ```
 
 #### Notes:
