@@ -21,11 +21,11 @@ It requires the following programs to be installed in the environment:
 ## How to use:
  For demonstration use:
   ```
-  python erisapfel.py -demo
+  python cvish.py -demo
   ```
  To run an install test using defaults, use:
  ```
-  python erisapfel.py -test
+  python cvish.py -test
  ```
 
 ## Commands:
@@ -74,7 +74,7 @@ Discordant and split reads are subset in their own bam files, viewable in the ``
 Resolved high confidence breakpoints are reported as features in the ```/results/<sample_name>/output/``` directory. 
 
 ```
-*_SV_CNV.gff - Final candidate list, with scores and breakpoint sequence 
+<sample_name>_SV_CNV.gff - Final candidate list, with scores and breakpoint sequence 
 ```
 
 ## How to make sense of the results in the _realigned.gff_ file
@@ -92,4 +92,4 @@ IV   cvish   7458_breeze_split   1091237   1091291   .   .   7    node_uid=7458_
 In this example the proposed breakpoint "7458" spans from chrI:30-111 (anchor) to chrIV:1091237-1091291 (breezepoint). It has a score of 7 and would not be reported using the default _min_score_ of 10.
 
 # Note on performance
-Erisapfel performs best with breakpoints spanning unique sequences and at sufficient depth (~30x depth). For lower depths of sequencing or breakpoints that occur in low-complexity or non-unique sequences this performance will suffer.  For breakpoints that are associated with transposons or other known mobile genetic elements, detection can be improved by using Erisapfel's MGE mode.
+CVish performs best with breakpoints spanning unique sequences and at sufficient depth (~30x depth). For lower depths of sequencing or breakpoints that occur in low-complexity or non-unique sequences this performance will suffer. 
