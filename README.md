@@ -33,7 +33,7 @@ It requires the following programs to be installed in the environment:
  * Purpose: Generates the required split and discordant sam files from fastq files. Should be ran once for the ancestor strain and once for each evolved strain.
   * Format:
  ```
-   python cvish.py -run -fa demo/demo.fna -fastq_1 demo/n01_ancestor.fastq.gz -fastq_2 demo/n02_ancestor.fastq.gz -config demo/demo_config.tsv -run_name demo_anc
+   python cvish.py -run -fa <reference_genome_fasta_file> -fastq_1 <read 1 of 2 PE> -fastq_2 <read 2 of 2 PE> -config <path to config file> -run_name <name of run>
  ```
  * Demo run on ancestor strain:
  ```
