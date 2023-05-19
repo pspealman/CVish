@@ -571,8 +571,9 @@ def generate_run_file():
     print('Generating shell file ... ', outfile_name)
     
     if 'sbatch_filename' in resource_dict:
-        sbatch_file = resource_dict['sbatch_filename']
-        if sbatch_file:
+        sbatch_file_name = resource_dict['sbatch_filename']
+        if sbatch_file_name:
+            sbatch_file = open(sbatch_file_name)
             outfile.write(sbatch_file.read())
      
     # module file is useful for executing in a HPC environment where installed
@@ -645,7 +646,7 @@ def generate_run_file():
     outfile.close()
         
     if not args.no_run:
-        if sbatch_file:
+        if sbatch_file_name:
             outline = ('Beginning sbatch run: {}').format(outfile_name)
             print (outline)
             bash_command = ('sbatch {output_file}').format(output_file=outfile_name)
