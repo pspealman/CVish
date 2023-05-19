@@ -79,10 +79,10 @@ When possible the assemdbled contig that generated the breakpoint is included.
 
 ```
 [chromosome]    [source]    [unique_id]   [start]   [stop]    [dot] [dot]   [score]   [details]
-I   cvish   7458_anchor_split	39821    39905   .   .   69    node_uid=7458;otherside=NC_001147.6:1091237-1091291_breeze;contig=CACACACACCACACCCACACACCCACACACCACACCCACACACTCTCTCACATCTACCTCTACTCTCGCTGTCAT
-IV   cvish   7458_breeze_split   1091237   1091291   .   .   69    node_uid=7458_anchor;otherside=NC_001144.5:30-111;contig=CACACACACCACACCCACACACCCACACACCACACCCACACACTCTCTCACATCTACCTCTACTCTCGCTGTCAT
+I   cvish   7458_anchor_split	39821    39905   .   .   7    node_uid=7458;otherside=NC_001147.6:1091237-1091291_breeze;contig=CACACACACCACACCCACACACCCACACACCACACCCACACACTCTCTCACATCTACCTCTACTCTCGCTGTCAT
+IV   cvish   7458_breeze_split   1091237   1091291   .   .   7    node_uid=7458_anchor;otherside=NC_001144.5:30-111;contig=CACACACACCACACCCACACACCCACACACCACACCCACACACTCTCTCACATCTACCTCTACTCTCGCTGTCAT
 ```
-In this example the proposed breakpoint "7458" spans from chrI:30-111 (anchor) to chrIV:1091237-1091291 (breezepoint). It has a score of 698 and would be reported using the default _min_score_.
+In this example the proposed breakpoint "7458" spans from chrI:30-111 (anchor) to chrIV:1091237-1091291 (breezepoint). It has a score of 7 and would not be reported using the default _min_score_ of 10.
 
 # Note on performance
 Erisapfel performs best with breakpoints spanning unique sequences and at sufficient depth (~30x depth). For lower depths of sequencing or breakpoints that occur in low-complexity or non-unique sequences this performance will suffer.  For breakpoints that are associated with transposons or other known mobile genetic elements, detection can be improved by using Erisapfel's MGE mode.
