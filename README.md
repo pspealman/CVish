@@ -49,11 +49,11 @@ It requires the following programs to be installed in the environment:
 #### Notes:
 * Using filters can improve the speed and performance of CVish. These filters include:
   * Read depth filters ```--depth_filter_bed``` which limit read depth calculations to regions of interest and avoid read depth measures over regions such as the rDNA locus. An example of this is located in ```filter_files/saccharomyces_cerevisiae_chromosome_NCBI_rDNA_filter.bed``` 
-  * Region filters ```--filter_bed``` and ```--filter_gff`` prevent breakpoint predicitions from occuring within the defined regions. These can be used to filter problematic regions, such as low complexity regions as in this telomere example:
+  * Region filters ```--filter_bed``` and ```--filter_gff``` prevent breakpoint predicitions from occuring within the defined regions. These can be used to filter problematic regions, such as low complexity regions as in this telomere example:
 ```filter_files/saccharomyces_cerevisiae_chromosome_NCBI_filter_telomeres.bed```
 Or regions that are repetitive throughout the genome, such as in this transposon example:
 ```filter_files/saccharomyces_cerevisiae_chromosome_transposon_GAP1.gff```
-  * Ancestor filters ```--filter_bed``` and ```--filter_gff`` are also used to prevent breakpoint predictions from occurring in regions already identified in the ancestor. An example of this can be seen in the __-run__ section above:
+  * Ancestor filters ```--filter_bed``` and ```--filter_gff``` are also used to prevent breakpoint predictions from occurring in regions already identified in the ancestor. An example of this can be seen in the __-run__ section above:
 ```results/demo_anc/output/demo_anc_SV_CNV.gff```  
 
 ## Output Analysis 
