@@ -5,15 +5,15 @@ fastq_1	REQUIRED: USER DEFINED
 fastq_2	REQUIRED: USER DEFINED
 verbose	False
 with_disco	False
-depth_region_filter	False
-ref_gff	False
+depth_region_filter	filter_files/saccharomyces_cerevisiae_chromosome_NCBI_rDNA_filter.bed
+ref_gff	demo/demo.gff
 ref_gff_feature	CDS
 gff_feature_name	gene=
 module_filename	False
 max_gap	300
 min_purity	0.9
 filter_gff	False
-filter_bed	False
+filter_bed	saccharomyces_cerevisiae_chromosome_NCBI_filter_telomeres.bed
 filter_object	False
 resolution_gap	5
 max_eval	0.01
@@ -26,4 +26,4 @@ disco_weight	1
 sbatch_filename	False
 min_confidence_score	1
 cnv_min_length	300
-filter_chromosome	False
+filter_chromosome	NC_001140.6
