@@ -2,21 +2,10 @@
 A **C**opy-number **V**ariant and Structural Variant finder for short read sequencing that uses split and discordant reads as well read depth to identify potential breakpoints. 
 
 _Important note for NYU HPC users:
- Load all necessary modules via:
-	 source demo/module_load.sh_
-
-## Requirements
-CVish intends to be a requirement lite tool and as such is contained entirely in single python script. 
-It requires the following programs to be installed in the environment:
-
-* python	(tested on version: 3.8.6)
-* bwa		(tested on version: 0.7.17)
-* samtools	(tested on version: 1.14)
-* bedtools	(tested on version: 2.29.2)
-* blast		(tested on version: 2.11.0)
-* samblaster	(tested on version: 0.1.26)
-* mafft		(tested on version: 7.475)
-* emboss	(tested on version: 6.6.0)
+ You can load all necessary modules via:_
+ ```
+ source demo/module_load.sh
+ ```
 
 ## Quick Start:
  ### Install:
@@ -26,11 +15,10 @@ It requires the following programs to be installed in the environment:
  ```
  ### Run whole analysis with __-run__ command
  * This generates the required split and discordant sam files from fastq files. Should be ran once for the ancestor strain and once for each evolved strain.
-  * Format:
  ```
    python cvish.py -run -fa <reference_genome_fasta_file> -fastq_1 <read 1 of 2 PE> -fastq_2 <read 2 of 2 PE> -config <path to config file> -run_name <name of run>
  ```
- * Examples run on ancestor strain:
+ * Example run on ancestor strain:
  ```
    python cvish.py -run -fa demo/demo.fna -fastq_1 demo/n01_ancestor.fastq.gz -fastq_2 demo/n02_ancestor.fastq.gz -config demo/demo_config.tsv -run_name demo_anc
    nano results/demo_anc/output/demo_anc_SV_CNV.gff
@@ -41,16 +29,21 @@ It requires the following programs to be installed in the environment:
   nano results/demo_evo/output/demo_evo_SV_CNV.gff
  ```
  ### Important notes on select configuration file parameters
- The 
+ Many parameters can and should be modified for optimal performance, these are enumerated in full below in the **Configuration section** but several important components are discussed here:
+  #### Analysis parameters
+  Several parameters can have a profound effect on the analysis. ```min_confidence_score``` sets the lower limit for potential breakpoints to be reported. Breakpoints scoring beneath these are out
  
- #### Filters for improved performance:
- * Using filters can improve the speed and performance of CVish. These filters include:
-   * Read depth filters ```--depth_filter_bed``` which limit read depth calculations to regions of interest and avoid read depth measures over regions such as the rDNA locus. An example of this is located in ```filter_files/saccharomyces_cerevisiae_chromosome_NCBI_rDNA_filter.bed``` 
-   * Region filters ```--filter_bed``` and ```--filter_gff``` prevent breakpoint predicitions from occuring within the defined regions. These can be used to filter problematic regions, such as low complexity regions as in this telomere example:
+  #### _-run_ command optional parameters
+  The run command can be used incongunction with modules and SLURM's sbatch job scheduler using the ```module_filename``` and ```sbatch_filename``` parameters. To generate a shell executable, but not run it, use the ```-no_run``` argument from the command line. 
+  
+  #### Filters for improved performance:
+  Using filters can improve the speed and performance of CVish. These filters include:
+   * Read depth filters ```depth_filter_bed``` which limit read depth calculations to regions of interest and avoid read depth measures over regions such as the rDNA locus. An example of this is located in: ```filter_files/saccharomyces_cerevisiae_chromosome_NCBI_rDNA_filter.bed``` 
+   * Region filters ```filter_bed``` and ```filter_gff``` prevent breakpoint predicitions from occuring within the defined regions. These can be used to filter problematic regions, such as low complexity regions as in this telomere example:
 ```filter_files/saccharomyces_cerevisiae_chromosome_NCBI_filter_telomeres.bed```
 Or regions that are repetitive throughout the genome, such as in this transposon example:
 ```filter_files/saccharomyces_cerevisiae_chromosome_transposon_GAP1.gff```
-   * Ancestor filters ```--filter_bed``` and ```--filter_gff``` are also used to prevent breakpoint predictions from occurring in regions already identified in the ancestor. An example of this can be seen in the __-run__ section above:
+   * Ancestor filters ```filter_bed``` and ```filter_gff``` are also used to prevent breakpoint predictions from occurring in regions already identified in the ancestor. An example of this can be seen in the __-run__ section above:
 ```results/demo_anc/output/demo_anc_SV_CNV.gff```  
 
 ## Output Analysis 
@@ -94,11 +87,24 @@ All files are located in the ```results/<sample_name>/``` directory.
  CVish performs best with breakpoints spanning unique sequences and at sufficient depth (~30x depth). For lower depths of sequencing or breakpoints that occur in low-complexity or non-unique sequences this performance will suffer. 
 
 # Detailed manual:
+ ## Requirements
+ CVish intends to be a requirement lite tool and as such is contained entirely in single python script. It requires the following programs to be installed in the environment:
+
+  * python	(tested on version: 3.8.6)
+  * bwa		(tested on version: 0.7.17)
+  * samtools	(tested on version: 1.14)
+  * bedtools	(tested on version: 2.29.2)
+  * blast	(tested on version: 2.11.0)
+  * samblaster	(tested on version: 0.1.26)
+  * mafft	(tested on version: 7.475)
+  * emboss	(tested on version: 6.6.0)
+
+## Built in demo and test 
  For demonstration use:
   ```
   python cvish.py -demo
   ```
  To run an install test using defaults, use:
- ```
+  ```
   python cvish.py -test
- ```
+  ```
