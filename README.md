@@ -49,17 +49,6 @@ Or regions that are repetitive throughout the genome, such as in this transposon
 ## Output Analysis 
 After the run has completed several resulting files should be analyzed to help determine likely breakpoints.
 
-All files are located in the ```results/<sample_name>/``` directory.
-
- ### Bams 
- Discordant and split reads are subset in their own bam files, viewable in the ```/results/<sample_name>/bam/``` directory. Files that may be of interest are:
- ```
- <sample_name>.bam - Complete, aligned reads bam
- <sample_name>.bedGraph - bedgraph of complete, aligned bam
- <sample_name>_discordant.bam - Discordant reads bam
- <sample_name>_split.bam - Split reads bam
- ```
-
  ### Output files
  Many files intended to help in the analysis of predicted breakpoints are in the ```/results/<sample_name>/output/``` directory. Files that may be of interest are:
 
@@ -67,15 +56,16 @@ All files are located in the ```results/<sample_name>/``` directory.
  <sample_name>_SV_CNV.gff - Resolved high confidence breakpoint, with scores and breakpoint sequences, reported as features.
  <sample_name>_SV_CNV.vcf - Resolved high confidence breakpoint, with scores and breakpoint sequences, reported as variants.
  <sample_name>_feature_copy_number.tsv - [optional] - if a reference gff file is provided during the run, the selected features will have their read depth statistics reported here. 
+ <sample_name>.bam - Complete, aligned reads bam
+ <sample_name>.bedGraph - Bedgraph of complete, aligned bam
+ <sample_name>_discordant.bam - Discordant reads bam
+ <sample_name>_split.bam - Split reads bam
  ```
 
  #### How to make sense of the results in the _SV_CNV.gff_ file
- The _SV_CNV.gff_ file follows a simple convention for highlighting breakpoints. Each breakpoint has at least two components: an anchor and a breezepoint. The anchor, by definition, contains a uniquely mapping sequence. Conversely, the breezepoint can map to numerous places with no restriction, this allows for potential breezepoints to map to repeat or low-complexity regions, such as gene homologs and transposon elements.
-
- When possible the assemdbled contig that generated the breakpoint is included.
+ The _SV_CNV.gff_ file follows a simple convention for highlighting breakpoints. Each breakpoint has at least two components: an anchor and a breezepoint. The anchor, by definition, contains a uniquely mapping sequence. Conversely, the breezepoint can map to numerous places with no restriction, this allows for potential breezepoints to map to repeat or low-complexity regions, such as gene homologs and transposon elements. When possible the assemdbled contig that generated the breakpoint is included.
 
  #### Example _SV_CNV.gff_
-
  ```
  [chromosome]    [source]    [unique_id]   [start]   [stop]    [dot] [dot]   [score]   [details]
  I   cvish   7458_anchor_split	39821    39905   .   .   7    node_uid=7458;otherside=NC_001147.6:1091237-1091291_breeze;contig=CACACACACCACACCCACACACCCACACACCACACCCACACACTCTCTCACATCTACCTCTACTCTCGCTGTCAT
