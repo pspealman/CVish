@@ -24,6 +24,6 @@ disco_score	27
 split_weight	3
 disco_weight	1
 sbatch_filename	False
-min_confidence_score	10
+min_confidence_score	1
 cnv_min_length	300
 filter_chromosome	NC_001140.6
