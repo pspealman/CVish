@@ -1108,7 +1108,7 @@ def make_gene_by_gene_copy_number(each_sample, ref_gff_filename, fg_median, fg_m
                     sub_std = round(sub_df["ct"].std(),3) 
                     
                     int_depth, p_value = make_probable_depth(sub_mean, fg_mean, (fg_std+sub_std))
-                    
+                                        
                     outline = ('{name}\t{chromo}\t{start}\t{stop}\t{sign}\t'
                                '{sub_median}\t{sub_mean}\t{sub_std}\t'
                                '{rel_median}\t{rel_mean}\t{cum_std}\t'
@@ -3190,17 +3190,21 @@ if args.depth_analysis:
         resource_dict[zscore_read_type] = fg_std
         
         if each_type == 'RD' and ref_gff:
-            cn_dict, feature_map = make_gene_by_gene_copy_number(each_sample, ref_gff, fg_median, fg_mean, fg_std, mpileup_df)
-            
-            pickle_name = ('{}/cn_dict_{}.p').format(pickles_dir, each_sample)
-            with open(pickle_name, "wb") as fp:
-                pickle.dump(cn_dict, fp)        
-            resource_dict['cn_dict'] = pickle_name
-            
-            pickle_name = ('{}/feature_map_{}.p').format(pickles_dir, each_sample)
-            with open(pickle_name, "wb") as fp:
-                pickle.dump(feature_map, fp)       
-            resource_dict['feature_map'] = pickle_name            
+            if (fg_median != 0) and (fg_mean != 0) and (fg_std != 0):
+                cn_dict, feature_map = make_gene_by_gene_copy_number(each_sample, ref_gff, fg_median, fg_mean, fg_std, mpileup_df)
+                
+                pickle_name = ('{}/cn_dict_{}.p').format(pickles_dir, each_sample)
+                with open(pickle_name, "wb") as fp:
+                    pickle.dump(cn_dict, fp)        
+                resource_dict['cn_dict'] = pickle_name
+                
+                pickle_name = ('{}/feature_map_{}.p').format(pickles_dir, each_sample)
+                with open(pickle_name, "wb") as fp:
+                    pickle.dump(feature_map, fp)       
+                resource_dict['feature_map'] = pickle_name  
+                
+            else:
+                print('Global read depths mean, median, standard deviation include zeros, skipping relative depth analysis.')
         
     io_append(resource_dict)
         
