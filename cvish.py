@@ -17,16 +17,19 @@ Version 1.0 2023.05.09 (arderley)
     _x_ update demo()
     _x_ update test()
     _x_ update run()
+    
+Version 1.1 2023.05.20 (mitaclau)
+    _x_ Check contig reporting in gff, vcf
+    _x_ Add CLI score filter so lines aren't added to the gff and filtered from the vcf
+    _x_ Add clean() function
+    _x_ Add disco optimization improvement
 
 Future versions:
     ___ Use better demo data (chromo VI, XI)
     ___ Progress tracker
-    ___ Add clean() function
     ___ Add verbose() function
-    ___ Unify and import filter further upstream in analysis 
+    ___ Unify and import filters further upstream in analysis 
     ___ Add gff dependant filter maker
-    ___ Add CLI score filter so lines aren't added to the gff and filtered from the vcf
-    ___ Check contig reporting in gff, vcf
     ___ Implement Single End option
 
 @author: Pieter Spealman ps163@nyu.edu
@@ -109,7 +112,8 @@ def eval_type(resource_dict, param, value):
     bool_list = ['ref_gff', 'filter_object', 'filter_gff', 'filter_bed',
                  'filter_chromosome', 'depth_region_filter', 'with_disco',
                  'ref_gff_feature', 'gff_feature_name',
-                 'sbatch_filename', 'module_filename', 'verbose']
+                 'sbatch_filename', 'module_filename', 'verbose',
+                 'no_post_run_clean_up']
     
     int_list = ['mapq_val', 'filter_flanking', 'split_score', 'disco_score', 
                 'max_gap', 'resolution_gap', 'cnv_min_length']
@@ -350,7 +354,7 @@ parser.add_argument('-flank','--filter_flanking',
 
 parser.add_argument('-with_disco', '--with_disco',
                     help = 'include discordant reads in calculations',
-                    default=False, action='store_true')
+                    default=True, action='store_false')
 
 parser.add_argument('-split_score', "--split_score",
                     help = 'Minimum score needed by split reads to trigger sensitivity calls',
@@ -421,6 +425,7 @@ contig_seq_dict = {}
 
 compliment_dict = {'A':'T', 'T':'A', 'G':'C', 'C':'G'}
 global_hypothesis_dict = {}
+global_contig_dict = {}
 
 if args.run_name:
     make_name = ("results/{}").format(args.run_name)
@@ -486,11 +491,22 @@ def load_configuration_file(config_file_name):
             
     if resource_dict['filter_chromosome']:
         if not isinstance(resource_dict['filter_chromosome'], set):
-            clean_fc = cleanup_chromo_set(resource_dict['filter_chromosome'])                
-            resource_dict['filter_chromosome'] = clean_fc
+            if not isinstance(resource_dict['filter_chromosome'], list):
+                clean_fc = cleanup_chromo_set(resource_dict['filter_chromosome'])                
+                resource_dict['filter_chromosome'] = clean_fc
+                
+            if isinstance(resource_dict['filter_chromosome'], list):
+                clean_fc = resource_dict['filter_chromosome']
+                resource_dict['filter_chromosome'] = set(clean_fc)             
                     
     if args.with_disco:
-        resource_dict['with_disco'] =args.with_disco
+        resource_dict['with_disco'] = args.with_disco
+        
+    if args.no_post_run_clean_up:
+        resource_dict['no_post_run_clean_up'] = args.no_post_run_clean_up
+        
+    if 'no_post_run_clean_up' not in resource_dict:
+        resource_dict['no_post_run_clean_up'] = args.filter_object
                                                 
     print('### Configuration Parameters ###')
     for param in resource_dict:
@@ -529,7 +545,8 @@ def generate_config_file():
                      'disco_weight':args.disco_weight,
                      'sbatch_filename':args.sbatch_filename,
                      'min_confidence_score':args.min_confidence_score,
-                     'cnv_min_length':args.cnv_min_length
+                     'cnv_min_length':args.cnv_min_length,
+                     'no_post_run_clean_up':args.no_post_run_clean_up
                      }
     
     resource_dict['run_name']=args.run_name
@@ -1433,6 +1450,7 @@ def get_seq(seq_file_name):
     seq_dict[seq] += 1
     
     if len(seq_dict) > 1:
+        print('get_seq(seq_file_name)')
         print(seq_file_name)
         print(seq_dict)
         1/0
@@ -1477,7 +1495,36 @@ def return_most_unique_read(read_nt_dict):
         
     return(max_read_unique)
 
+def get_otherside_dict(query_deets_dict, split_assignment, anchor):
+    process = False
+    best_chromo = False
+    best_hf = False
+    best_ht = False
+    max_bit_score = 0
+    
+    for otherside_type in split_assignment:
+        for next_anchor in split_assignment[otherside_type]:
+            if next_anchor != anchor:
+                chromo = query_deets_dict[next_anchor]['chromo']
+                next_bit_score = query_deets_dict[next_anchor]['bit_score']
+                next_hf = min(query_deets_dict[next_anchor]['hit_from'], query_deets_dict[next_anchor]['hit_to'])
+                next_ht = max(query_deets_dict[next_anchor]['hit_from'], query_deets_dict[next_anchor]['hit_to'])
+                    
+                if next_bit_score > max_bit_score:
+                    process = True
+                    best_chromo = chromo
+                    best_hf = next_hf
+                    best_ht = next_ht
+                    max_bit_score = next_bit_score
+                
+    return(process, best_chromo, best_hf, best_ht, max_bit_score)
+
 def build_otherside_dict(query_deets_dict, split_assignment, anchor, otherside_type, otherside_dict):
+    best_chromo = False
+    best_hf = False
+    best_ht = False
+    max_bit_score = 0
+    
     for next_anchor in split_assignment[otherside_type]:
         if next_anchor != anchor:
             chromo = query_deets_dict[next_anchor]['chromo']
@@ -1494,7 +1541,13 @@ def build_otherside_dict(query_deets_dict, split_assignment, anchor, otherside_t
                     
                 otherside_dict[chromo][next_nt]+=next_bit_score
                 
-    return(otherside_dict)
+            if next_bit_score > max_bit_score:
+                best_chromo = chromo
+                best_hf = next_hf
+                best_ht = next_ht
+                max_bit_score = next_bit_score
+                
+    return(otherside_dict, best_chromo, best_hf, best_ht, max_bit_score)
 
 def parse_json_for_eval(json_file_name):
     '''
@@ -1566,6 +1619,8 @@ def parse_json_for_eval(json_file_name):
     return(False)
 
 def parse_json(json_file_name, seq, hypothesis_dict, anchor_contig_dict, max_eval):
+    global global_hypothesis_dict
+    #global global_contig_dict
     '''
     Parameters
     ----------
@@ -1720,6 +1775,29 @@ def parse_json(json_file_name, seq, hypothesis_dict, anchor_contig_dict, max_eva
             chromo = query_deets_dict[anchor]['chromo']
             hf = min(query_deets_dict[anchor]['hit_from'], query_deets_dict[anchor]['hit_to'])
             ht = max(query_deets_dict[anchor]['hit_from'], query_deets_dict[anchor]['hit_to'])
+            bit_score = query_deets_dict[anchor]['bit_score']
+            
+            process, other_chromo, next_start, next_stop, next_bit_score = get_otherside_dict(query_deets_dict, split_assignment, anchor)
+            
+            if process:
+                uid = len(global_hypothesis_dict)
+                score = bit_score + next_bit_score
+                if uid in global_hypothesis_dict:
+                    print('error if uid in global_hypothesis_dict:')
+                    1/0
+                    
+                global_hypothesis_dict[uid] = {"anchor_chromo":chromo, 
+                                                       "anchor_start":hf,
+                                                       "anchor_stop":ht,
+                                                       "other_chromo":other_chromo,
+                                                       "other_start":next_start,
+                                                       "other_stop":next_stop,
+                                                       "score":score,
+                                                       "contig":set([seq]),
+                                                       "checked":False,
+                                                       "combined_with":False,
+                                                       "replaced_by":False
+                                                       }
             
             if chromo not in hypothesis_dict:
                 hypothesis_dict[chromo] = {}
@@ -1732,10 +1810,10 @@ def parse_json(json_file_name, seq, hypothesis_dict, anchor_contig_dict, max_eva
                     otherside_dict = hypothesis_dict[chromo][nt]
                     
                 for otherside_type in split_assignment:
-                    otherside_dict = build_otherside_dict(query_deets_dict, split_assignment, anchor, otherside_type, otherside_dict)
+                    otherside_dict, other_chromo, next_start, next_stop, next_bit_score = build_otherside_dict(query_deets_dict, split_assignment, anchor, otherside_type, otherside_dict)
                     
                 hypothesis_dict[chromo][nt] = otherside_dict
-                    
+                 
             if chromo not in anchor_contig_dict:
                 anchor_contig_dict[chromo] = {}
                 
@@ -1744,7 +1822,7 @@ def parse_json(json_file_name, seq, hypothesis_dict, anchor_contig_dict, max_eva
                         anchor_contig_dict[chromo][nt] = set()
                         
                     anchor_contig_dict[chromo][nt].add(seq)
-            
+                                
     return(hypothesis_dict, anchor_contig_dict)
 
 def make_anchor_regions(nt_set, gap):
@@ -1771,71 +1849,76 @@ def make_anchor_regions(nt_set, gap):
     else:
         return(region_dict)
 
-def make_otherside_regions(chromo, region_dict, chromo_hypothesis_dict, chromo_anchor_contig_dict, gap):
-    '''
-    The key premise here is that there are two types of reads 
-    1. will be a read with unique matches on both sides (2 anchors), this is a trivial case
-    2. a read with only one unique match (1 anchors) one variable.
+# def make_otherside_regions(chromo, region_dict, chromo_hypothesis_dict, chromo_anchor_contig_dict, gap):
+#     '''
+#     The key premise here is that there are two types of reads 
+#     1. will be a read with unique matches on both sides (2 anchors), this is a trivial case
+#     2. a read with only one unique match (1 anchors) one variable.
     
-    In the second case it can be informative to ask two questions:
-        a. what are all the variable loci the anchor maps to?
-        b. what is the relative read depth of those loci?
+#     In the second case it can be informative to ask two questions:
+#         a. what are all the variable loci the anchor maps to?
+#         b. what is the relative read depth of those loci?
         
-    When a read is aligned the anchor(s) nucelotides (both read and reference) should be identified as should the read depth weighted variable.
-    The anchor and variables should then be read out. 
-    ''' 
-    global global_hypothesis_dict
+#     When a read is aligned the anchor(s) nucelotides (both read and reference) should be identified as should the read depth weighted variable.
+#     The anchor and variables should then be read out. 
+#     ''' 
+#     global global_hypothesis_dict
 
-    for region_number in region_dict:
-        start = region_dict[region_number]['start']
-        stop = region_dict[region_number]['stop']
+#     for region_number in region_dict:
+#         start = region_dict[region_number]['start']
+#         stop = region_dict[region_number]['stop']
         
-        contig_set = set()
-        for nt in range(start, stop+1):
-            if nt in chromo_anchor_contig_dict:
-                for contig in chromo_anchor_contig_dict[nt]:
-                    contig_set.add(contig)
+#         contig_set = set()
+#         for nt in range(start, stop+1):
+#             if nt in chromo_anchor_contig_dict:
+#                 for contig in chromo_anchor_contig_dict[nt]:
+#                     contig_set.add(contig)
         
-        for nt in range(start, stop+1):
-            if nt in chromo_hypothesis_dict:                
-                for otherside_chromo in chromo_hypothesis_dict[nt]:
-                    next_nt_list = []
-                    for next_nt in chromo_hypothesis_dict[nt][otherside_chromo]:
-                        next_nt_list.append(next_nt)
+#         if len(contig_set) < 1:
+#             print(contig_set)
+#             print(chromo, start, stop)
+#             1/0
+        
+#         for nt in range(start, stop+1):
+#             if nt in chromo_hypothesis_dict:                
+#                 for otherside_chromo in chromo_hypothesis_dict[nt]:
+#                     next_nt_list = []
+#                     for next_nt in chromo_hypothesis_dict[nt][otherside_chromo]:
+#                         next_nt_list.append(next_nt)
                         
-                    next_region_dict = make_anchor_regions(next_nt_list, gap)
+#                     next_region_dict = make_anchor_regions(next_nt_list, gap)
                     
-                    for next_region in next_region_dict:                       
-                        next_bs_list = []
-                        next_start = next_region_dict[next_region]['start']
-                        next_stop = next_region_dict[next_region]['stop']
+#                     for next_region in next_region_dict:                       
+#                         next_bs_list = []
+#                         next_start = next_region_dict[next_region]['start']
+#                         next_stop = next_region_dict[next_region]['stop']
                         
-                        for next_nt in range(next_start, next_stop+1):
-                            #because of gaps not all nt may be present for scoring, these will be counted as a 0
-                            if next_nt in chromo_hypothesis_dict[nt][otherside_chromo]:
-                                next_bs_list.append(chromo_hypothesis_dict[nt][otherside_chromo][next_nt])
-                            else:
-                                next_bs_list.append(0)
+#                         for next_nt in range(next_start, next_stop+1):
+#                             #because of gaps not all nt may be present for scoring, these will be counted as a 0
+#                             if next_nt in chromo_hypothesis_dict[nt][otherside_chromo]:
+#                                 next_bs_list.append(chromo_hypothesis_dict[nt][otherside_chromo][next_nt])
+#                             else:
+#                                 next_bs_list.append(0)
                         
-                        score = round(np.median(next_bs_list))
+#                         score = round(np.median(next_bs_list))
                                                 
-                        uid = len(global_hypothesis_dict)
-                        global_hypothesis_dict[uid] = {"anchor_chromo":chromo, 
-                                                               "anchor_start":start,
-                                                               "anchor_stop":stop,
-                                                               "other_chromo":otherside_chromo,
-                                                               "other_start":next_start,
-                                                               "other_stop":next_stop,
-                                                               "score":score,
-                                                               "contig":contig_set,
-                                                               "checked":False,
-                                                               "combined_with":False,
-                                                               "replaced_by":False
-                                                               }
+#                         uid = len(global_hypothesis_dict)
+#                         global_hypothesis_dict[uid] = {"anchor_chromo":chromo, 
+#                                                                "anchor_start":start,
+#                                                                "anchor_stop":stop,
+#                                                                "other_chromo":otherside_chromo,
+#                                                                "other_start":next_start,
+#                                                                "other_stop":next_stop,
+#                                                                "score":score,
+#                                                                "contig":contig_set,
+#                                                                "checked":False,
+#                                                                "combined_with":False,
+#                                                                "replaced_by":False
+#                                                                }
                         
                         
                                 
-    return() 
+#     return() 
 
 def fourway_test(uid_start, next_start, uid_stop, next_stop, gap):
     #print("uid_start, next_start, uid_stop, next_stop, gap")
@@ -2063,13 +2146,17 @@ def nested_collapse():
                                         next_o_stop=global_hypothesis_dict[next_uid][site_next_o_stop] 
                                         
                                         if fourway_test(uid_o_start, next_o_start, uid_o_stop, next_o_stop, resgap):
-                                            new_score = max(global_hypothesis_dict[uid]['score'], global_hypothesis_dict[next_uid]['score'])
+                                            new_score = sum([global_hypothesis_dict[uid]['score'], global_hypothesis_dict[next_uid]['score']])
                                                               
                                             #TODO fix contig update to take the combined form
                                             new_contig_set = global_hypothesis_dict[uid]['contig']
                                             
+                                            if not isinstance(new_contig_set, set):
+                                                new_contig_set = set([new_contig_set])
+                                            
                                             for contig in global_hypothesis_dict[next_uid]['contig']:
                                                 new_contig_set.add(contig)
+                                                print()
                                                                             
                                             to_add_dict = {"anchor_chromo":uid_chromo, 
                                                             "anchor_start":min(int(uid_start), int(next_start)),
@@ -2094,9 +2181,9 @@ def nested_collapse():
                                             global_hypothesis_dict[next_uid]['replaced_by'] = new_uid
                                             global_hypothesis_dict[next_uid]['checked'] = True
                                             
-                                            # outline = ('{uid} combined with {next_uid} and replaced by {new_uid}').format(
-                                            #     uid = uid, next_uid = next_uid, new_uid = new_uid)
-                                            # print(outline)
+                                            outline = ('{uid} combined with {next_uid} and replaced by {new_uid}\n\tcontig set: {new_contig_set}').format(
+                                                uid = uid, next_uid = next_uid, new_uid = new_uid, new_contig_set = new_contig_set)
+                                            print(outline)
                                             
                                             return(True)
                                         
@@ -2441,15 +2528,15 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
     vcf_set = set()
     gff_set = set()                  
 
-    for chromo in hypothesis_dict:
-        print('\tchromo: ', chromo)
-        nt_set = set()
-        for nt in hypothesis_dict[chromo]:
-            nt_set.add(nt)
+    # for chromo in hypothesis_dict:
+    #     print('\tchromo: ', chromo)
+    #     nt_set = set()
+    #     for nt in hypothesis_dict[chromo]:
+    #         nt_set.add(nt)
             
-        region_dict = make_anchor_regions(nt_set, gap)
+    #     region_dict = make_anchor_regions(nt_set, gap)
         
-        make_otherside_regions(chromo, region_dict, hypothesis_dict[chromo], anchor_contig_dict[chromo], gap)
+    #     make_otherside_regions(chromo, region_dict, hypothesis_dict[chromo], anchor_contig_dict[chromo], gap)
         
     print("Starting hypothesis reduction ...")
     good_ct = set()
@@ -2461,7 +2548,7 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
             good_ct.add(uid)
     print('good_ct', len(good_ct))
     print('bad_ct', len(bad_ct))
-    
+        
     collapse_hypotheses()
     
     outfile_name = ('global_hypothesis.csv')
@@ -2506,35 +2593,52 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
                                min_confidence_score = min_confidence_score)
                 print(outline)
                     
-            if score >= min_confidence_score:
+            if score > 0:
                 #print('Adding breakpoint ...')
 
                 details = get_details(anchor_chromo, anchor_start, anchor_stop,
                                       other_chromo, other_start, other_stop, 
                                       cn_dict, feature_map)
+                
+                filter_char = ''
+                filter_deet = 'PASS'
+                if score < min_confidence_score:
+                    filter_char = '#'
+                    filter_deet = 'FILTER'
+                    
+                    outline = ('Filtering hypothesis {uid} for low confidence score.'
+                               ' Score:{score}, minimum: {min_confidence_score}').format(
+                                   uid = uid,
+                                   score = score,
+                                   min_confidence_score = min_confidence_score)
+                    print(outline)
             
-                gff_line = ('{chromo}\tcvish\t{uid}_anchor_split'
+                gff_line = ('{filter_char}{chromo}\tcvish\t{uid}_anchor_split'
                             '\t{start}\t{stop}\t.\t.\t{score}'
-                            '\tnode_uid={uid};otherside={otherside}_breeze;{details};contig={contig}\n').format(
+                            '\tnode_uid={uid};filter={filter_deet};otherside={otherside}_breeze;{details};contig={contig}\n').format(
+                                filter_char = filter_char,
                                 chromo = anchor_chromo,
                                 uid = uid,
                                 start = anchor_start,
                                 stop = anchor_stop,
                                 score = int(score),
+                                filter_deet = filter_deet,
                                 otherside = otherside,
                                 details = details,
                                 contig = contig)
                                 
                 gff_set.add(gff_line)
                 
-                vcf_line = ('{chromo}\t{pos}\t{uid}'
-                            '\tN\t{alt}\t60\tPASS\tSVMETHOD=cvish;OTHERSIDE={info}'
+                vcf_line = ('{filter_char}{chromo}\t{pos}\t{uid}'
+                            '\tN\t{alt}\t60\t{filter_deet}\tSVMETHOD=cvish;OTHERSIDE={info}'
                             '\tGT:GQ:DP\t.:.:{dp}\n').format(
+                                filter_char = filter_char,
                                 chromo = anchor_chromo,
                                 pos = anchor_start,
                                 uid = uid,
                                 info = otherside,
                                 alt = contig,
+                                filter_deet = filter_deet,
                                 dp = int(score))
                                 
                 vcf_set.add(vcf_line)
@@ -2544,28 +2648,32 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
                     start = anchor_start,
                     stop = anchor_stop)
         
-                rev_gff_line = ('{chromo}\tcvish\t{uid}_breeze_split'
+                rev_gff_line = ('{filter_char}{filter_char}{chromo}\tcvish\t{uid}_breeze_split'
                             '\t{start}\t{stop}\t.\t.\t{score}'
-                            '\tnode_uid={uid}_anchor;otherside={anchorside};{details};contig={contig}\n').format(
+                            '\tnode_uid={uid};filter={filter_deet};otherside={anchorside};{details};contig={contig}\n').format(
+                                filter_char = filter_char,
                                 chromo = other_chromo,
                                 uid = uid,
                                 start = other_start,
                                 stop = other_stop,
                                 score = int(score),
+                                filter_deet = filter_deet,
                                 anchorside = anchorside,
                                 details = details,
                                 contig = contig)
                 
                 gff_set.add(rev_gff_line)
                 
-                vcf_line = ('{chromo}\t{pos}\t{uid}'
-                            '\tN\t{alt}\t60\tPASS\tSVMETHOD=cvish;OTHERSIDE={info}'
+                vcf_line = ('{filter_char}{chromo}\t{pos}\t{uid}'
+                            '\tN\t{alt}\t60\t{filter_deet}\tSVMETHOD=cvish;OTHERSIDE={info}'
                             '\tGT:GQ:DP\t.:.:{dp}\n').format(
+                                filter_char = filter_char,
                                 chromo = other_chromo,
                                 pos = other_start,
                                 uid = uid,
                                 info = anchorside,
                                 alt = contig,
+                                filter_deet = filter_deet,
                                 dp = int(score))
                                 
                 vcf_set.add(vcf_line)
@@ -2676,6 +2784,8 @@ def check_for_alignment(seq1, seq2):
     return(results)
 
 def build_subclusters(msa_dict, combined_set, check_list, prefix_dict):
+    global global_contig_dict
+    
     cluster = str(len(msa_dict))
         
     for name1 in msa_dict:
@@ -2745,6 +2855,8 @@ def build_subclusters(msa_dict, combined_set, check_list, prefix_dict):
     return(False, cluster, msa_dict, combined_set, check_list, '', prefix_dict)
 
 def build_clusters(hypo, msa_dict, contig_seq_dict):
+    # TODO FUCK
+    #
     prefix_set = set()
     prefix_dict = {}
     combined_set = set()
@@ -3868,10 +3980,13 @@ if args.call_breakpoints:
     bam_file = resource_dict['bam_file']
     resgap = resource_dict['resolution_gap']
     max_eval = resource_dict['max_eval']
+    no_post_run_clean_up = resource_dict['no_post_run_clean_up']
     
     uniuid_to_seq_dict = io_load('fq')
-        
-    break_tab = ('{}/break_bt.tab').format(temp_dir)   
+    
+    # TODO use resource
+    break_tab = ('{}/break_bt.tab').format(temp_dir)
+    #resource_dict['max_eval']
 
     """parse_brks:
     This recovers the loci from the hypothesized breakpoints identified in earlier
@@ -3900,6 +4015,7 @@ if args.call_breakpoints:
     
     print('Starting breakpoint testing...')
     #using the names of reads (complete_qname_dict) collects the sequences from (uniuid_to_seq_dict)
+    uid_to_seq_lookup = {}
     
     for hypo, qname_list in complete_qname_dict.items():        
         qname_ct +=1
@@ -3995,10 +4111,48 @@ if args.call_breakpoints:
                    len(complete_qname_dict), len(gff_set), gff_file_name, vcf_file_name)
     print(outline)
     
+    outline = ('\tFor associated bam files, bedgraphs, and statistics check:'
+               '\n\n\t{}').format(final_output_dir)
+    print(outline)
+    
+    bam_dir = resource_dict['bam_dir']
+    temp_dir = resource_dict['temp_dir']
+    pickles_dir = resource_dict['pickles_dir']
+    
+    vcf_file_name = ('{}/{}_SV_CNV.vcf').format(final_output_dir, output_file)
+    vcf_file = open(vcf_file_name,'w')
+    
+    bashCommand = ('mv {bam_dir}/*.bam* {final_output_dir}/').format(
+        bam_dir = bam_dir, final_output_dir = final_output_dir)
+    print(bashCommand)       
+    subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
+    
     io_append(resource_dict)
     
-    #if not args.no_post_run_clean_up:
+    if not no_post_run_clean_up:
+        bam_dir = resource_dict['bam_dir']
+        temp_dir = resource_dict['temp_dir']
+        pickles_dir = resource_dict['pickles_dir']
         
+        outline = ('\t***CLEANING INTERMEDIARY FILES***'
+                   '\n\n\t{}').format(final_output_dir)
+        print(outline)
+        
+        bashCommand = ('rm -rf {}').format(bam_dir)
+        print(bashCommand)       
+        subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
+
+        bashCommand = ('rm -rf {}').format(temp_dir)
+        print(bashCommand)       
+        subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
+        
+        bashCommand = ('rm -rf {}').format(pickles_dir)
+        print(bashCommand)       
+        subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)        
+        
+        outline = ('\t***TO PREVENT THIS USE THE -no_clean FLAG ***'
+                   '\n\n')
+        print(outline)
     
 if args.run:
     resource_dict = generate_run_file()
