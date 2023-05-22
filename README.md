@@ -82,7 +82,7 @@ XI	cvish	16_breeze_split	513836	513945	.	.	25	node_uid=16_anchor;filter=PASS;oth
 The following example uses data from [DGY1657](https://doi.org/10.1128/mra.00729). 
 
 ## Run
-The DGY1657_config.tsv is available in the demo folder. This was ran with the following command:
+The [DGY1657_config.tsv](https://github.com/pspealman/CVish/blob/master/demo/demo_config.tsv) is available in the demo folder. This was ran with the following command:
 ```
 python cvish.py -run -config demo/DGY1657_config.tsv -run_name Anc
 ```
@@ -103,7 +103,9 @@ XI	cvish	0_anchor_split	523865	524009	.	.	3	node_uid=0;filter=PASS;otherside=XI:
 ```
 Here, we see three hypotheses: "16","9", and "0" with scores of 25, 3, and 3, respectively. Hypothesis 16 maps from chrVI:55630-55685 on one side to chrXI:513836-513945 on the other - this agrees with what we know about this strain, which is that we used the ACT1 promotor to drive a reporter inserted upstream of the GAP1 locus. The other two, 9 and 0, are low scoring and probably not accurate predictions. To get a better sense we can also load the visualization files located in the output directory.  
 
-  
+![Figure with representative RD, discordant, and split-reads with breakpoint predictions](https://github.com/pspealman/CVish/blob/master/demo/DGY1657_cvish.png)
+
+Perform  
 
 
 # Detailed manual:
