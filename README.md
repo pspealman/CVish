@@ -114,7 +114,7 @@ The figure also shows the discordant (orange) and split reads (red) extracted fr
  CVish intends to be a requirement lite tool and as such is contained entirely in single python script. It requires the following programs to be installed in the environment:
 
   * python	(tested on version: 3.8.6)
-  * bwa		(tested on version: 0.7.17)
+  * bwa		(tested on version: 0.7.17) **NB** bwa is required and is not compatible with bwa-mem2 
   * samtools	(tested on version: 1.14)
   * bedtools	(tested on version: 2.29.2)
   * blast	(tested on version: 2.11.0)
