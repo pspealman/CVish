@@ -8,6 +8,9 @@ _Important note for NYU HPC users:
  ```
 
 ## Quick Start:
+ ### **Input requirements**
+ CVish requires a reference FASTA file for the genome alignment, it is important to note that this FASTA file needs to have been indexed using ```bwa```. While many tools, such as ```bwa-mem2``` can generate index files, they often feature differences in format that make them incompatible with previous standards. 
+
  ### Install:
  ```
  git clone https://github.com/pspealman/CVish.git
