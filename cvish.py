@@ -3183,7 +3183,12 @@ if args.make_template_file:
                      'sbatch_filename':args.sbatch_filename,
                      'min_confidence_score':args.min_confidence_score,
                      'cnv_min_length':args.cnv_min_length,
-                     'filter_chromosome':args.filter_chromosome
+                     'filter_chromosome':args.filter_chromosome,
+                     'no_post_run_clean_up':args.no_post_run_clean_up,
+                     'expected_ploidy':args.expected_ploidy,
+                     'high_sensitivity_mode':args.high_sensitivity_mode,
+                     'low_sensitivity_mode':args.low_sensitivity_mode,
+                     'skip_fasta_index':args.skip_fasta_index
                      }
         
     resource_file_name = io_make('template', outfile_name, resource_dict)
