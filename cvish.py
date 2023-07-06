@@ -23,9 +23,16 @@ Version 1.1 2023.05.20 (mitaclau)
     _x_ Add CLI score filter so lines aren't added to the gff and filtered from the vcf
     _x_ Add clean() function
     _x_ Add disco optimization improvement
+    
+Version 1.2 2023.07.07 (canorting)
+    _x_ ploidy option
+    _x_ runmode option
+    _x_ bwa index, note in document that this is not bwa-mem2
+    _x_ removed orphaned bcftools, tabix
 
 Future versions:
     ___ Use better demo data (chromo VI, XI)
+    ___ Stop double gunzipping fastq.gz
     ___ Progress tracker
     ___ Add verbose() function
     ___ Unify and import filters further upstream in analysis 
@@ -64,8 +71,8 @@ def help_dialog():
     monolog=('Manual for cvish\n'+
     '#=============================================================#\n'+
     'Created by Pieter Spealman\n ps163@nyu.edu \n'+
-    'Release version: 1.0.0 \n'+
-    'Release date: 05.09.2023 \n'+
+    'Release version: 1.2 \n'+
+    'Release date: 06.07.2023 \n'+
     '\tThis is a multistep package that identifies CNV and  breakpoints using split\n'+
     'and discordant sequencing reads.\n'+
     '#=============================================================#\n'+
@@ -113,10 +120,10 @@ def eval_type(resource_dict, param, value):
                  'filter_chromosome', 'depth_region_filter', 'with_disco',
                  'ref_gff_feature', 'gff_feature_name',
                  'sbatch_filename', 'module_filename', 'verbose',
-                 'no_post_run_clean_up']
+                 'no_post_run_clean_up', 'skip_fasta_index']
     
     int_list = ['mapq_val', 'filter_flanking', 'split_score', 'disco_score', 
-                'max_gap', 'resolution_gap', 'cnv_min_length']
+                'max_gap', 'resolution_gap', 'cnv_min_length', 'expected_ploidy']
     
     float_list = ['split_weight', 'disco_weight', 'max_eval', 'min_confidence_score',
                   'min_purity']
@@ -237,6 +244,10 @@ parser.add_argument('-demo',"--demo", help="Run Demo", action='store_true')
 parser.add_argument('-test',"--test", help="Run Test", action='store_true')
 
 ''' Commands '''
+parser.add_argument('-skip_index',"--skip_fasta_index", 
+                    help = "use bwa to index reference fasta file",
+                    action='store_false')
+
 parser.add_argument('-template',"--make_template_file", 
                     help = "Generate tab-separated config template")
 
@@ -398,6 +409,19 @@ parser.add_argument('-rgap', '--resolution_gap',
                     help="Max distance between sequence fragments to be combined", 
                     default = 5, type=int)
 
+parser.add_argument('-high', '--high_sensitivity_mode',
+                    help = "[optional] run with high sensitivity (and high FDR) parameters'",
+                    default = False)
+
+parser.add_argument('-low', '--low_sensitivity_mode',
+                    help = "[optional] run with low sensitivity (and low FDR) parameters'",
+                    default = False)
+
+parser.add_argument('-ploidy', "--expected_ploidy", 
+                    help="[optional] This effects the '_feature_copy_number.tsv' output by dividing the relative copy number by the ploidy number",
+                    default = 1, type=int)
+
+
 ''' One Line Run '''
 parser.add_argument('-run',"--run", help="Single line command", action='store_true')
 parser.add_argument('-sbatch', '--sbatch_filename', help="[optional, --run] Run as SBATCH", default = False)
@@ -507,7 +531,27 @@ def load_configuration_file(config_file_name):
         
     if 'no_post_run_clean_up' not in resource_dict:
         resource_dict['no_post_run_clean_up'] = args.filter_object
-                                                
+        
+    if resource_dict['high_sensitivity_mode']:
+        resource_dict['mapq_val'] = 10
+        resource_dict['filter_flanking'] = 100
+        resource_dict['split_score'] = 3
+        resource_dict['disco_score'] = 9
+        resource_dict['max_eval'] = 0.05
+        resource_dict['min_confidence_score'] = 0.5
+        resource_dict['cnv_min_length'] = 100
+        resource_dict['min_purity'] = 0.8
+
+    if resource_dict['low_sensitivity_mode']:
+        resource_dict['mapq_val'] = 50
+        resource_dict['filter_flanking'] = 50
+        resource_dict['split_score'] = 18
+        resource_dict['disco_score'] = 42
+        resource_dict['max_eval'] = 0.001
+        resource_dict['min_confidence_score'] = 1.5
+        resource_dict['cnv_min_length'] = 400
+        resource_dict['min_purity'] = 0.9
+ 
     print('### Configuration Parameters ###')
     for param in resource_dict:
         print(param, resource_dict[param], type(resource_dict[param]))
@@ -546,7 +590,11 @@ def generate_config_file():
                      'sbatch_filename':args.sbatch_filename,
                      'min_confidence_score':args.min_confidence_score,
                      'cnv_min_length':args.cnv_min_length,
-                     'no_post_run_clean_up':args.no_post_run_clean_up
+                     'no_post_run_clean_up':args.no_post_run_clean_up,
+                     'expected_ploidy':args.expected_ploidy,
+                     'high_sensitivity_mode':args.high_sensitivity_mode,
+                     'low_sensitivity_mode':args.low_sensitivity_mode,
+                     'skip_fasta_index':args.skip_fasta_index
                      }
     
     resource_dict['run_name']=args.run_name
@@ -1046,8 +1094,8 @@ def unpackbits(x,num_bits=12):
     """
     return(upb) 
 
-def make_probable_depth(sub_mean, fg_mean, std):
-    int_depth = round(sub_mean/fg_mean, 3)
+def make_probable_depth(sub_mean, fg_mean, std, ploidy):    
+    int_depth = round(sub_mean/(ploidy * fg_mean), 3)
 
     z_score = (sub_mean - fg_mean)/std
        
@@ -1072,6 +1120,7 @@ def make_gene_by_gene_copy_number(each_sample, ref_gff_filename, fg_median, fg_m
     
     feature = resource_dict['ref_gff_feature']
     gff_feature_name = resource_dict['gff_feature_name']
+    ploidy = resource_dict['expected_ploidy']
     
     cn_dict = {}
     feature_map = {}
@@ -1124,7 +1173,7 @@ def make_gene_by_gene_copy_number(each_sample, ref_gff_filename, fg_median, fg_m
                     sub_mean = round(sub_df["ct"].mean(),3)
                     sub_std = round(sub_df["ct"].std(),3) 
                     
-                    int_depth, p_value = make_probable_depth(sub_mean, fg_mean, (fg_std+sub_std))
+                    int_depth, p_value = make_probable_depth(sub_mean, fg_mean, (fg_std+sub_std), ploidy)
                                         
                     outline = ('{name}\t{chromo}\t{start}\t{stop}\t{sign}\t'
                                '{sub_median}\t{sub_mean}\t{sub_std}\t'
@@ -2453,7 +2502,7 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
     '''
     Summarize hypotheses 
     '''    
-    fa_file = resource_dict['genome_fa']
+    fa_file = resource_dict['original_genome_fa']
     bam_file = resource_dict['bam_file']
     min_confidence_score = resource_dict['min_confidence_score']
     
@@ -2855,8 +2904,6 @@ def build_subclusters(msa_dict, combined_set, check_list, prefix_dict):
     return(False, cluster, msa_dict, combined_set, check_list, '', prefix_dict)
 
 def build_clusters(hypo, msa_dict, contig_seq_dict):
-    # TODO FUCK
-    #
     prefix_set = set()
     prefix_dict = {}
     combined_set = set()
@@ -3149,6 +3196,23 @@ if args.load_sequences:
     if resource_dict['module_filename']:
         module_file = open(resource_dict['module_filename'])
         command_file.write(module_file.read())
+        
+    if not resource_dict['skip_fasta_index']:
+        outline = ('#Original reference fasta: {fa_file}\n').format(fa_file = fa_file)
+        temp_fa_file = ('{temp}/temp_reference_fasta.fa').format(temp = temp_dir)
+        command_file.write(outline)
+        
+        outline = ('cp {fa_file} {temp_fa_file}\n').format(fa_file = fa_file,
+                                                           temp_fa_file = temp_fa_file)
+        command_file.write(outline)
+        
+        resource_dict['original_genome_fa'] = fa_file
+        resource_dict['genome_fa'] = temp_fa_file
+        
+        fa_file = temp_fa_file
+        
+        outline = ('bwa index {fa_file}\n').format(fa_file = fa_file)
+        command_file.write(outline)
             
     ref_fa=('genome_fa={}\n').format(fa_file)
     ref_gff=('\tgenome_gff={}\n').format(ref_gff_file)
@@ -4090,22 +4154,7 @@ if args.call_breakpoints:
         vcf_file.write(each_vcf)
     
     vcf_file.close()
-    
-    bashCommand = ('bcftools sort {vcf_file} > {vcf_file}.sorted').format(
-        vcf_file = vcf_file_name)
-    print(bashCommand)       
-    subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
-    
-    bashCommand = ('bgzip {vcf_file}.sorted -cf > {vcf_file}.gz').format(
-        vcf_file = vcf_file_name)
-    print(bashCommand)       
-    subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
-    
-    bashCommand = ('tabix -p vcf {vcf_file}.gz').format(
-        vcf_file = vcf_file_name)
-    print(bashCommand)       
-    subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
-    
+        
     outline = ('\t{} nodes realigned to {} regions.\n\n\t'
                'For a complete representation refer to:\n\t\t{} or {}').format(
                    len(complete_qname_dict), len(gff_set), gff_file_name, vcf_file_name)
@@ -4116,11 +4165,11 @@ if args.call_breakpoints:
     print(outline)
     
     bam_dir = resource_dict['bam_dir']
-    temp_dir = resource_dict['temp_dir']
+    #temp_dir = resource_dict['temp_dir']
     pickles_dir = resource_dict['pickles_dir']
     
-    vcf_file_name = ('{}/{}_SV_CNV.vcf').format(final_output_dir, output_file)
-    vcf_file = open(vcf_file_name,'w')
+    # vcf_file_name = ('{}/{}_SV_CNV.vcf').format(final_output_dir, output_file)
+    # vcf_file = open(vcf_file_name,'w')
     
     bashCommand = ('mv {bam_dir}/*.bam* {final_output_dir}/').format(
         bam_dir = bam_dir, final_output_dir = final_output_dir)
