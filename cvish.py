@@ -246,7 +246,8 @@ parser.add_argument('-test',"--test", help="Run Test", action='store_true')
 ''' Commands '''
 parser.add_argument('-skip_index',"--skip_fasta_index", 
                     help = "use bwa to index reference fasta file",
-                    action='store_false')
+                    default = False,
+                    action='store_true')
 
 parser.add_argument('-template',"--make_template_file", 
                     help = "Generate tab-separated config template")
@@ -775,6 +776,33 @@ def io_append(resource_dict, runmode='resource'):
         resource_pickle_name = ('{}/resource.p').format(final_output_dir)         
         with open(resource_pickle_name, 'wb') as file:
             pickle.dump(resource_dict, file)
+            
+def io_overwrite(resource_dict, field, new_val):
+    pre_existing_dict = {}
+    
+    resource_file_name = ('{}/resource.tab').format(final_output_dir)    
+    resource_file = open(resource_file_name)
+    
+    for line in resource_file:
+        line = line.strip()
+        cat, val = line.split('\t')
+        if cat != field:
+            pre_existing_dict[cat]=val
+        else:
+            pre_existing_dict[cat]=new_val
+    resource_file.close()
+
+    resource_file_name = ('{}/resource.tab').format(final_output_dir)    
+    resource_file = open(resource_file_name, 'w')
+    
+    for cat, val in pre_existing_dict.items():
+        outline = ('{}\t{}\n').format(cat,val)
+        resource_file.write(outline)
+    resource_file.close()
+    
+    resource_pickle_name = ('{}/resource.p').format(final_output_dir)         
+    with open(resource_pickle_name, 'wb') as file:
+        pickle.dump(resource_dict, file)
         
 def io_load(runmode='resource'):
     if runmode == 'resource':
@@ -2501,8 +2529,12 @@ def get_details(anchor_chromo, anchor_start, anchor_stop,
 def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict): 
     '''
     Summarize hypotheses 
-    '''    
-    fa_file = resource_dict['original_genome_fa']
+    '''
+    if 'original_genome_fa' in resource_dict:
+        fa_file = resource_dict['original_genome_fa']
+    else:
+        fa_file = resource_dict['genome_fa']
+        
     bam_file = resource_dict['bam_file']
     min_confidence_score = resource_dict['min_confidence_score']
     
@@ -3207,8 +3239,8 @@ if args.load_sequences:
         command_file.write(outline)
         
         resource_dict['original_genome_fa'] = fa_file
-        resource_dict['genome_fa'] = temp_fa_file
-        
+        io_overwrite(resource_dict, 'genome_fa', temp_fa_file)
+                
         fa_file = temp_fa_file
         
         outline = ('bwa index {fa_file}\n').format(fa_file = fa_file)
