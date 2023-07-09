@@ -69,7 +69,6 @@ NC_001140.6	RefSeq	mRNA	445	3311	.	-	.	ID=rna2505;Parent=gene2517;Dbxref=Genbank
 NC_001140.6	RefSeq	exon	2671	3311	.	-	.	ID=id3046;Parent=rna2505;Dbxref=Genbank:NM_001179130.1;gbkey=mRNA;product=hypothetical protein;transcript_id=NM_001179130.1
 NC_001140.6	RefSeq	exon	445	1897	.	-	.	ID=id3047;Parent=rna2505;Dbxref=Genbank:NM_001179130.1;gbkey=mRNA;product=hypothetical protein;transcript_id=NM_001179130.1
 NC_001140.6	RefSeq	CDS	2671	3311	.	-	0	ID=cds2355;Parent=rna2505;Dbxref=SGD:S000001042,Genbank:NP_011813.1;Name=NP_011813.1;Note=hypothetical protein%3B potential Cdc28p substrate;gbkey=CDS;product=hypothetical protein;protein_id=NP_011813.1
-N
 NC_001140.6	RefSeq	CDS	445	1897	.	-	1	ID=cds2355;Parent=rna2505;Dbxref=SGD:S000001042,Genbank:NP_011813.1;Name=NP_011813.1;Note=hypothetical protein%3B potential Cdc28p substrate;gbkey=CDS;product=hypothetical protein;protein_id=NP_011813.1
 ``` 
    Note that the **Feature** column (3rd column), describes the GFF feature and has options like *region, gene, mRNA, exon, CDS* etc. Each record also has an **Attribute** column (9th column) that contains descriptions of the feature. Here we're interested in the "Systematic Name" which is stored in the "locus_tag" attribute of the "gene" feature. To use this we'll need to define these in the config file by editing the ```ref_gff_feature``` and ```gff_feature_name``` parameters:
