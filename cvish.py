@@ -1128,7 +1128,7 @@ def make_probable_depth(sub_mean, fg_mean, std, ploidy):
     z_score = (sub_mean - fg_mean)/std
        
     p_value = stats.norm.pdf(abs(z_score))*2
-    
+        
     return(int_depth, p_value)
 
 def gff_to_feature_map(feature_map, name, chromo, start, stop):
@@ -1147,6 +1147,7 @@ def make_gene_by_gene_copy_number(each_sample, ref_gff_filename, fg_median, fg_m
     global resource_dict
     
     feature = resource_dict['ref_gff_feature']
+    
     gff_feature_name = resource_dict['gff_feature_name']
     ploidy = resource_dict['expected_ploidy']
     
@@ -1160,12 +1161,7 @@ def make_gene_by_gene_copy_number(each_sample, ref_gff_filename, fg_median, fg_m
     header = ('ID\tchromo\tstart\tstop\tsign\tsub_median\tsub_mean\tsub_std\t'
               'rel_median\trel_mean\tcum_std\tint_depth\tp_value\tdeets\n')
     feature_depth_file.write(header)
-    
-    if args.ref_gff_feature:
-        feature = args.ref_gff_feature
-    else:
-        feature = 'CDS'
-        
+            
     ref_gff = open(ref_gff_filename)
     
     for line in ref_gff:
@@ -1174,7 +1170,7 @@ def make_gene_by_gene_copy_number(each_sample, ref_gff_filename, fg_median, fg_m
                 #I	sgd	CDS	335	649	.	+	0	ID=CDS:YAL069W;Parent=transcript:YAL069W_mRNA;protein_id=YAL069W
                 region_type = line.split('\t')[2]
                 
-                if feature == region_type.upper():
+                if feature == region_type:
                     line = line.strip()
                     chromo, _s, _r, start, stop, _dot1, sign, _dot2, deets = line.split('\t')
                     
