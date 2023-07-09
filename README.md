@@ -54,7 +54,33 @@ _Important note for NYU HPC users:
 Or regions that are repetitive throughout the genome, such as in this transposon example:
 ```filter_files/saccharomyces_cerevisiae_chromosome_transposon_GAP1.gff```
    * Ancestor filters ```filter_bed``` and ```filter_gff``` are also used to prevent breakpoint predictions from occurring in regions already identified in the ancestor. An example of this can be seen in the __-run__ section above:
-```results/demo_anc/output/demo_anc_SV_CNV.gff```  
+```results/demo_anc/output/demo_anc_SV_CNV.gff```
+
+## Using reference GFF files
+   One optional feature of CVish is that it can calculate expected copy number over any region. 
+   Using this option requires supplying a GFF that has the same coordinate system as the reference genome FASTA file (so don't use the Ensembl genome GFF with the NCBI genome FASTA, for example). This can be set in the config file at the ```ref_gff``` line as such: 
+```ref_gff /demo/demo.gff```
+
+   If we open this GFF file we'll find the following lines:
+```
+NC_001140.6	RefSeq	region	1	5505	.	-	.	ID=id3045;Dbxref=SGD:S000028891;Note=TEL08L%3B Telomeric region on the left arm of Chromosome VIII%3B composed of an X element core sequence%2C an X element combinatorial repeat%2C a short Y' element%2C and a short terminal stretch of telomeric repeats;gbkey=telomere
+NC_001140.6	RefSeq	gene	445	3311	.	-	.	ID=gene2517;Dbxref=GeneID:856335;Name=YHL050C;gbkey=Gene;locus_tag=YHL050C
+NC_001140.6	RefSeq	mRNA	445	3311	.	-	.	ID=rna2505;Parent=gene2517;Dbxref=Genbank:NM_001179130.1;Name=NM_001179130.1;gbkey=mRNA;product=hypothetical protein;transcript_id=NM_001179130.1
+NC_001140.6	RefSeq	exon	2671	3311	.	-	.	ID=id3046;Parent=rna2505;Dbxref=Genbank:NM_001179130.1;gbkey=mRNA;product=hypothetical protein;transcript_id=NM_001179130.1
+NC_001140.6	RefSeq	exon	445	1897	.	-	.	ID=id3047;Parent=rna2505;Dbxref=Genbank:NM_001179130.1;gbkey=mRNA;product=hypothetical protein;transcript_id=NM_001179130.1
+NC_001140.6	RefSeq	CDS	2671	3311	.	-	0	ID=cds2355;Parent=rna2505;Dbxref=SGD:S000001042,Genbank:NP_011813.1;Name=NP_011813.1;Note=hypothetical protein%3B potential Cdc28p substrate;gbkey=CDS;product=hypothetical protein;protein_id=NP_011813.1
+N
+NC_001140.6	RefSeq	CDS	445	1897	.	-	1	ID=cds2355;Parent=rna2505;Dbxref=SGD:S000001042,Genbank:NP_011813.1;Name=NP_011813.1;Note=hypothetical protein%3B potential Cdc28p substrate;gbkey=CDS;product=hypothetical protein;protein_id=NP_011813.1
+``` 
+   Note that the **Feature** column (3rd column), describes the GFF feature and has options like *region, gene, mRNA, exon, CDS* etc. Each record also has an **Attribute** column (9th column) that contains descriptions of the feature. Here we're interested in the "Systematic Name" which is stored in the "locus_tag" attribute of the "gene" feature. To use this we'll need to define these in the config file by editing the ```ref_gff_feature``` and ```gff_feature_name``` parameters:
+```
+ref_gff_feature	gene
+gff_feature_name	locus_tag=
+```
+   Finally, if you are using a non-haploid organism you will need to specif the expected ploidy number by editing the ```expected_ploidy``` parameter:
+```
+expected_ploidy 2
+```
 
 ## Output Analysis 
 After the run has completed several resulting files should be analyzed to help determine likely breakpoints.
