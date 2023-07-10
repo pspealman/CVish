@@ -26,3 +26,8 @@ sbatch_filename	False
 min_confidence_score	1
 filter_chromosome	False
 cnv_min_length	300
+no_post_run_clean_up	False
+expected_ploidy	1
+high_sensitivity_mode	False
+low_sensitivity_mode	False
+skip_fasta_index	False
