@@ -13,7 +13,7 @@ module_filename	False
 max_gap	300
 min_purity	0.9
 filter_gff	False
-filter_bed	demo/saccharomyces_cerevisiae_chromosome_NCBI_filter_telomeres.bed
+filter_bed	filter_files/saccharomyces_cerevisiae_chromosome_NCBI_filter_telomeres.bed
 filter_object	False
 resolution_gap	5
 max_eval	0.01
