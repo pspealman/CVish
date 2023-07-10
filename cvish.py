@@ -29,6 +29,7 @@ Version 1.2 2023.07.07 (canorting)
     _x_ runmode option
     _x_ bwa index, note in document that this is not bwa-mem2
     _x_ removed orphaned bcftools, tabix
+    _x_ added cn_weights and sv_weights to final score 
 
 Future versions:
     ___ Use better demo data (chromo VI, XI)
@@ -1123,7 +1124,7 @@ def unpackbits(x,num_bits=12):
     return(upb) 
 
 def make_probable_depth(sub_mean, fg_mean, std, ploidy):    
-    int_depth = round(sub_mean/(ploidy * fg_mean), 3)
+    int_depth = round((sub_mean*ploidy)/fg_mean, 3)
 
     z_score = (sub_mean - fg_mean)/std
        
@@ -2499,7 +2500,7 @@ def get_details_on_each_side(chromo, start, stop, cn_dict, feature_map):
                         if fourway_test(start, locus_start, stop, locus_stop, resgap):
                             cn = cn_dict[feature_name][locus]['cn']
                             pval = cn_dict[feature_name][locus]['pval']
-                            outline = ('name={feature_name}_cn={cn}_pval={pval}').format(
+                            outline = ('{feature_name};cn={cn};pval={pval}').format(
                                 feature_name = feature_name,
                                 cn = cn, pval = pval)
                             details+=outline
@@ -2522,10 +2523,61 @@ def get_details(anchor_chromo, anchor_start, anchor_stop,
     
     return(details)
 
+def return_higher_cn(m_chromo_df, nuc, cnv_min_length, c_median):
+    if c_median == 0:
+        return(1)
+    
+    m_chromo_left = m_chromo_df.loc[((m_chromo_df["nuc"] >= (nuc - cnv_min_length)) & 
+                                           (m_chromo_df["nuc"] <= nuc))]
+    
+    m_chromo_left_median = abs(np.log2(m_chromo_left["ct"].median()/c_median))
+    
+    m_chromo_right = m_chromo_df.loc[((m_chromo_df["nuc"] >= nuc) & 
+                                           (m_chromo_df["nuc"] <= (nuc + cnv_min_length)))]
+                                      
+    m_chromo_right_median = abs(np.log2(m_chromo_right["ct"].median()/c_median))
+    
+    max_cn = max(m_chromo_left_median, m_chromo_right_median)
+    
+    return(max_cn)
+
+def cn_weight(mpileup_df, chromo, start, stop, score, cnv_min_length):
+
+    m_chromo_df = mpileup_df.loc[mpileup_df["chromo"] == chromo]
+    
+    c_median = m_chromo_df["ct"].median()
+    
+    cn_start = return_higher_cn(m_chromo_df, start, cnv_min_length, c_median)
+    
+    cn_stop = return_higher_cn(m_chromo_df, stop, cnv_min_length, c_median)
+    
+    max_cn = max(cn_start, cn_stop)
+      
+    return(score*max_cn)
+
+def sv_weight(score, anchor_chromo, anchor_start, anchor_stop, other_chromo, other_start, other_stop, chromo_size_dict):
+    if anchor_chromo != other_chromo:
+        return(score*100)
+    
+    else:
+        chromo_size = int(chromo_size_dict[anchor_chromo])
+        left = min(anchor_start, other_start)
+        right = max(anchor_stop, other_stop)
+        
+        weight = 1+(abs(left-right)/chromo_size)
+        
+        return(score*weight)
+
 def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict): 
     '''
     Summarize hypotheses 
     '''
+    
+    cnv_min_length = resource_dict['cnv_min_length']
+    
+    pickle_name = resource_dict['mpileup_df_RD']
+    mpileup_df = pickle_loader(pickle_name, 'df')   
+    
     if 'original_genome_fa' in resource_dict:
         fa_file = resource_dict['original_genome_fa']
     else:
@@ -2605,16 +2657,6 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
     vcf_set = set()
     gff_set = set()                  
 
-    # for chromo in hypothesis_dict:
-    #     print('\tchromo: ', chromo)
-    #     nt_set = set()
-    #     for nt in hypothesis_dict[chromo]:
-    #         nt_set.add(nt)
-            
-    #     region_dict = make_anchor_regions(nt_set, gap)
-        
-    #     make_otherside_regions(chromo, region_dict, hypothesis_dict[chromo], anchor_contig_dict[chromo], gap)
-        
     print("Starting hypothesis reduction ...")
     good_ct = set()
     bad_ct = set()
@@ -2646,7 +2688,10 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
             score = global_hypothesis_dict[uid]['score']
             contig_set = global_hypothesis_dict[uid]['contig']
             
-            score = score/100
+            score = cn_weight(mpileup_df, anchor_chromo, anchor_start, anchor_stop, score, cnv_min_length)
+            score = cn_weight(mpileup_df, other_chromo, other_start, other_stop, score, cnv_min_length)
+            score = sv_weight(score, anchor_chromo, anchor_start, anchor_stop, other_chromo, other_start, other_stop, chromo_size_dict)
+            score = score/1000
                             
             otherside = ('{other_chromo}:{other_start}-{other_stop}').format(
                 other_chromo = other_chromo,
@@ -3439,7 +3484,6 @@ if args.peaks:
                                 
     file_name_lookup = []
     depth_dict = {}
-    # chromo_depth_dict = {}
     
     for each_type in read_type_list:
         print('Processing ', each_type)
@@ -3449,10 +3493,7 @@ if args.peaks:
         
         chromo_gff_file_name = ('{}/{}_{}_chromosome.gff').format(final_output_dir, each_sample, each_type)
         chromo_gff_outfile = open(chromo_gff_file_name,'w')
-    
-        #pickle_name = ('{}/mpileup_{}_{}.p').format(pickles_dir, each_sample, each_type)
-        #mpileup_df = pickle_loader(pickle_name, 'df')
-        
+            
         df_name = ('mpileup_df_{}').format(each_type)
         pickle_name = resource_dict[df_name]
         mpileup_df = pickle_loader(pickle_name, 'df')
