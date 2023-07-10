@@ -27,3 +27,8 @@ sbatch_filename	demo/sbatch_template.txt
 min_confidence_score	1
 cnv_min_length	300
 filter_chromosome	False
+no_post_run_clean_up	False
+expected_ploidy	1
+high_sensitivity_mode	False
+low_sensitivity_mode	False
+skip_fasta_index	False
