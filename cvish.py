@@ -31,6 +31,9 @@ Version 1.2 2023.07.07 (canorting)
     _x_ removed orphaned bcftools, tabix
     _x_ added cn_weights and sv_weights to final score 
 
+Version 1.3 2024.01.29 (heimaless)
+    _x_ fixed sparse discordant reads normalization (-call) 
+
 Future versions:
     ___ Use better demo data (chromo VI, XI)
     ___ Stop double gunzipping fastq.gz
@@ -2552,12 +2555,14 @@ def cn_weight(mpileup_df, chromo, start, stop, score, cnv_min_length):
     cn_stop = return_higher_cn(m_chromo_df, stop, cnv_min_length, c_median)
     
     max_cn = max(cn_start, cn_stop)
-      
+
+    max_cn = min(max_cn, 1e6)
+    
     return(score*max_cn)
 
 def sv_weight(score, anchor_chromo, anchor_start, anchor_stop, other_chromo, other_start, other_stop, chromo_size_dict):
-    if anchor_chromo != other_chromo:
-        return(score*100)
+    if anchor_chromo != other_chromo:        
+        return(score*1e2)
     
     else:
         chromo_size = int(chromo_size_dict[anchor_chromo])
@@ -2565,7 +2570,7 @@ def sv_weight(score, anchor_chromo, anchor_start, anchor_stop, other_chromo, oth
         right = max(anchor_stop, other_stop)
         
         weight = 1+(abs(left-right)/chromo_size)
-        
+                
         return(score*weight)
 
 def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict): 
