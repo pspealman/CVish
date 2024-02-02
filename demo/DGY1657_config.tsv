@@ -24,7 +24,7 @@ split_weight	3
 disco_weight	1
 sbatch_filename	False
 min_confidence_score	1
-filter_chromosome	False
+filter_chromosome	Mito
 cnv_min_length	300
 no_post_run_clean_up	False
 expected_ploidy	1
