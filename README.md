@@ -156,6 +156,7 @@ The figure also shows the discordant (orange) and split reads (red) extracted fr
   * mafft	(tested on version: 7.475)
   * emboss	(tested on version: 6.6.0)
 
+<!--
 ## Built in demo and test 
  For demonstration of command syntax use:
   ```
@@ -165,3 +166,4 @@ The figure also shows the discordant (orange) and split reads (red) extracted fr
   ```
   python cvish.py -test
   ```
+  -->
