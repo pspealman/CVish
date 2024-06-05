@@ -35,6 +35,7 @@ Version 1.3 2024.01.29 (heimaless)
     _x_ fixed sparse discordant reads normalization (-call) 
 
 Future versions:
+    ___ Better chromosome filtering with a naming convention check
     ___ Use better demo data (chromo VI, XI)
     ___ Stop double gunzipping fastq.gz
     ___ Progress tracker
