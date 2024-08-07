@@ -1,5 +1,6 @@
 # CVish
 A **C**opy-number **V**ariant and Structural Variant finder for short read sequencing that uses split and discordant reads as well read depth to identify potential breakpoints. 
+(_version 2.0_)
 
 _Important note for NYU HPC users:
  You can load all necessary modules via:_
@@ -15,17 +16,48 @@ _Important note for NYU HPC users:
  ```
  ### Run whole analysis with __-run__ command
  * This generates the required split and discordant sam files from fastq files. Should be ran once for the ancestor strain and once for each evolved strain.
+```
+  python cvish.py -run -fa S288C_Ensembl.fa.gz -fastq_1 demo/n01_ancestor.fastq.gz -fastq_2 demo/n02_ancestor.fastq.gz -run_name ancestor_demo
+  python cvish.py -run -fa S288C_Ensembl.fa.gz -fastq_1 demo/n01_evolved.fastq.gz -fastq_2 demo/n02_evolved.fastq.gz -run_name evolved_demo
+```
+
+## Basic Analysis tutorial:
+ ### Step One: Preparation
+ * Before running this command we need to download a reference genome file - this can be done using the wget command
  ```
-   python cvish.py -run -fa <reference_genome_fasta_file> -fastq_1 <read 1 of 2 PE> -fastq_2 <read 2 of 2 PE> -config <path to config file> -run_name <name of run>
+   wget https://ftp.ensembl.org/pub/release-112/fasta/saccharomyces_cerevisiae/dna/Saccharomyces_cerevisiae.R64-1-1.dna.toplevel.fa.gz -O S288C_Ensembl.fa.gz
+   gunzip S288C_Ensembl.fa.gz
+   head S288C_Ensembl.fa
+ ```
+ * Note that _Saccharomyces cereivisiae_'s genome in Ensembl uses the 'Roman Numeral' (ie. 'I', 'II', 'XI') chromosome naming convention with the mitochondrial genome named 'Mito'.
+ * We can download the matching GFF from the same source as well.
+ ```
+   wget https://ftp.ensembl.org/pub/release-112/gff3/saccharomyces_cerevisiae/Saccharomyces_cerevisiae.R64-1-1.112.gff3.gz -O S288C_Ensembl.gff.gz
+   gunzip S288C_Ensembl.gff.gz
+   head -n 30 S288C_Ensembl.gff
+ ```
+ * We can verify that the gff is also using the 'Roman Numeral' (ie. 'I', 'II', 'XI') chromosome naming convention.
+ * It is also worth noting that 
+ * Since we want to exclude regions like the rDNA locus from analysis we want to make sure that we select the appropriate 'excluded regions' file.
+ ```
+   head filter_files/S288C_Ensembl_exclude_regions.bed
+ ```
+ * We find the BED file uses the same naming convention, so we can proceed with **Step Two**
+   
+ ### Step Two: Run Command on Ancestor Strain
+ * We're first going to analyze the sequencing data for the Ancestor, using the files 
+ ```
+   python cvish.py -run -fa S288C_Ensembl.fa.gz -fastq_1 <read 1 of 2 PE> -fastq_2 <read 2 of 2 PE> -run_name <name of run>
  ```
  * Example run on ancestor strain:
  ```
-   python cvish.py -run -fa demo/demo.fna -fastq_1 demo/n01_ancestor.fastq.gz -fastq_2 demo/n02_ancestor.fastq.gz -config demo/demo_config.tsv -run_name demo_anc
+   
+   python cvish.py -run -fa demo/S288C_R64_demo.fa.gz -fastq_1 demo/n01_ancestor.fastq.gz -fastq_2 demo/n02_ancestor.fastq.gz -exclude saccharomyces_cerevisiae_chromosome_Ensembl_rDNA_exclude.bed demo/ -run_name demo_anc
    nano results/demo_anc/output/demo_anc_SV_CNV.gff
  ```
   * Example run on evolved strain: 
  ```
-  python cvish.py -run -fa demo/demo.fna -fastq_1 demo/n01_evolved.fastq.gz -fastq_2 demo/n02_evolved.fastq.gz -config demo/demo_evo_config.tsv -filter_gff results/demo_anc/output/demo_anc_SV_CNV.gff -run_name demo_evo
+  python cvish.py -run -fa demo/demo.fna -fastq_1 demo/n01_evolved.fastq.gz -fastq_2 demo/n02_evolved.fastq.gz -config  -filter_gff results/demo_anc/output/demo_anc_SV_CNV.gff -run_name demo_evo
   nano results/demo_evo/output/demo_evo_SV_CNV.gff
  ```
  ### Important notes on select configuration file parameters
