@@ -9,19 +9,33 @@ _Important note for NYU HPC users:
  ```
 
 ## Quick Start:
- ### Install:
+CVish can be run using a single Illumina paired-end sequencing library (.fastq) along with a reference genome (.fa), it will produce variant calls in both a GFF3 (.gff) and VCFv4.2 (.vcf) format by just using the command line as.
+``` 
+python cvish.py -run -fa <reference_genome.fa> -fastq_1 <n01_fastq.gz> -fastq_2 <n02.fastq.gz> -run_name <unique_sample_name>
+# output is stored in results/<unique_sample_name>/output/<unique_sample_name>_SV_CNV.gff
+```
+
+## Example run:
+ ### Install and run preparation:
  ```
  git clone https://github.com/pspealman/CVish.git
  cd CVish
+ wget https://ftp.ensembl.org/pub/release-112/fasta/saccharomyces_cerevisiae/dna/Saccharomyces_cerevisiae.R64-1-1.dna.toplevel.fa.gz -O S288C_Ensembl.fa.gz
  ```
  ### Run whole analysis with __-run__ command
- * This generates the required split and discordant sam files from fastq files. Should be ran once for the ancestor strain and once for each evolved strain.
+ * This generates the required split and discordant sam files from fastq files. 
+ ```
+  python cvish.py -run -fa S288C_Ensembl.fa.gz -fastq_1 demo/n01_ancestor.fastq.gz -fastq_2 demo/n02_ancestor.fastq.gz -run_name ancestor_demo
+  head results/ancestor_demo/output/ancestor_demo_SV_CNV.gff
+ ```
+ ### OPTIONAL Use first results as filter for second sample 
+ * In instances where an ancestor and evolved strain are sequenced the results of one run can be used to filter .
 ```
   python cvish.py -run -fa S288C_Ensembl.fa.gz -fastq_1 demo/n01_ancestor.fastq.gz -fastq_2 demo/n02_ancestor.fastq.gz -run_name ancestor_demo
-  python cvish.py -run -fa S288C_Ensembl.fa.gz -fastq_1 demo/n01_evolved.fastq.gz -fastq_2 demo/n02_evolved.fastq.gz -run_name evolved_demo
+  python cvish.py -run -fa S288C_Ensembl.fa.gz -fastq_1 demo/n01_evolved.fastq.gz -fastq_2 demo/n02_evolved.fastq.gz -exclude results/ancestor_demo/output/ancestor_demo_SV_CNV.gff -run_name evolved_demo
 ```
 
-## Basic Analysis tutorial:
+## Basic Analysis Tutorial:
  ### Step One: Preparation
  * Before running this command we need to download a reference genome file - this can be done using the wget command
  ```
