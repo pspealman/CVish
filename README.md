@@ -28,11 +28,11 @@ python cvish.py -run -fa <reference_genome.fa> -fastq_1 <n01_fastq.gz> -fastq_2 
   python cvish.py -run -fa S288C_Ensembl.fa.gz -fastq_1 demo/n01_ancestor.fastq.gz -fastq_2 demo/n02_ancestor.fastq.gz -run_name ancestor_demo
   head results/ancestor_demo/output/ancestor_demo_SV_CNV.gff
  ```
- ### OPTIONAL Use first results as filter for second sample 
+ ### Use first results as filter for second sample [optional]
  In instances where an ancestor and evolved strain are sequenced the results of one run can be used to filter .
  ```
-  python cvish.py -run -fa S288C_Ensembl.fa.gz -fastq_1 demo/n01_ancestor.fastq.gz -fastq_2 demo/n02_ancestor.fastq.gz -run_name ancestor_demo
   python cvish.py -run -fa S288C_Ensembl.fa.gz -fastq_1 demo/n01_evolved.fastq.gz -fastq_2 demo/n02_evolved.fastq.gz -exclude results/ancestor_demo/output/ancestor_demo_SV_CNV.gff -run_name evolved_demo
+  head results/ancestor_demo/output/evolved_demo_SV_CNV.gff
  ```
 
 ## Basic Analysis Tutorial:
@@ -44,36 +44,60 @@ python cvish.py -run -fa <reference_genome.fa> -fastq_1 <n01_fastq.gz> -fastq_2 
    head S288C_Ensembl.fa
  ```
  Note that _Saccharomyces cereivisiae_'s genome in Ensembl uses the 'Roman Numeral' (ie. 'I', 'II', 'XI') chromosome naming convention with the mitochondrial genome named 'Mito'.
- * We can download the matching GFF from the same source as well.
+ We can download the matching GFF from the same source as well.
  ```
    wget https://ftp.ensembl.org/pub/release-112/gff3/saccharomyces_cerevisiae/Saccharomyces_cerevisiae.R64-1-1.112.gff3.gz -O S288C_Ensembl.gff.gz
    gunzip S288C_Ensembl.gff.gz
    head -n 30 S288C_Ensembl.gff
  ```
- * We can verify that the gff is also using the 'Roman Numeral' (ie. 'I', 'II', 'XI') chromosome naming convention.
- * It is also worth noting that 
- * Since we want to exclude regions like the rDNA locus from analysis we want to make sure that we select the appropriate 'excluded regions' file.
+ We can verify that the gff is also using the 'Roman Numeral' (ie. 'I', 'II', 'XI') chromosome naming convention.
+ Since we want to exclude regions like the rDNA locus from analysis we want to make sure that we select the appropriate 'excluded regions' file.
  ```
    head filter_files/S288C_Ensembl_exclude_regions.bed
  ```
- * We find the BED file uses the same naming convention, so we can proceed with **Step Two**
+ We find the BED file uses the same naming convention, so we can proceed with **Step Two**
    
  ### Step Two: Run Command on Ancestor Strain
- * We're first going to analyze the sequencing data for the Ancestor, using the files 
+ We're first going to analyze the sequencing data for the Ancestor while fitlering regions listed in the excluded_regions file using the _-exclude_ argument.  
  ```
-   python cvish.py -run -fa S288C_Ensembl.fa.gz -fastq_1 <read 1 of 2 PE> -fastq_2 <read 2 of 2 PE> -run_name <name of run>
+   python cvish.py -run -fa S288C_Ensembl.fa.gz -fastq_1 demo/n01_ancestor.fastq.gz -fastq_2 demo/n02_ancestor.fastq.gz -exclude filter_files/S288C_Ensembl_exclude_regions.bed -run_name ancestor_tutorial
+   head results/ancestor_demo/output/ancestor_tutorial_SV_CNV.gff
  ```
- * Example run on ancestor strain:
+ A quick look at the _ancestor_tutorial_SV_CNV.gff_ will show a combination of hits and excluded_regions.
+ 
+ ### Step Three: Run Command on Evolved Strain
+ Now we're going to analyze the sequencing data for the Evolved strain this time filtering regions in the ancestor_tutorial_SV_CNV.gff   
  ```
-   
-   python cvish.py -run -fa demo/S288C_R64_demo.fa.gz -fastq_1 demo/n01_ancestor.fastq.gz -fastq_2 demo/n02_ancestor.fastq.gz -exclude saccharomyces_cerevisiae_chromosome_Ensembl_rDNA_exclude.bed demo/ -run_name demo_anc
-   nano results/demo_anc/output/demo_anc_SV_CNV.gff
+   python cvish.py -run -fa S288C_Ensembl.fa.gz -fastq_1 demo/n01_evolved.fastq.gz -fastq_2 demo/n02_evolved.fastq.gz -exclude results/ancestor_demo/output/ancestor_tutorial_SV_CNV.gff -run_name evolved_tutorial
+   head results/ancestor_demo/output/evolved_tutorial_SV_CNV.gff
  ```
-  * Example run on evolved strain: 
+ Checking the _evolved_tutorial_SV_CNV.gff_ we find that the excluded regions from both the original _S288C_Ensembl_exclude_regions.bed_ and the _ancestor_tutorial_SV_CNV.gff_ are now present.
+
+ ### Step Four: Interpreting the output
+ 
+ #### How to make sense of the results in the _SV_CNV.gff_ file
+ The _SV_CNV.gff_ file follows a simple convention for highlighting breakpoints. Each breakpoint has at least two components: an anchor and a breezepoint. The anchor, by definition, contains a uniquely mapping sequence. Conversely, the breezepoint can map to numerous places with no restriction, this allows for potential breezepoints to map to repeat or low-complexity regions, such as gene homologs and transposon elements. When possible the assemdbled contig that generated the breakpoint is included.
+
+ #### Example of a potential hit using split read _unique_sequences_ in _ancestor_tutorial_SV_CNV.gff_
  ```
-  python cvish.py -run -fa demo/demo.fna -fastq_1 demo/n01_evolved.fastq.gz -fastq_2 demo/n02_evolved.fastq.gz -config  -filter_gff results/demo_anc/output/demo_anc_SV_CNV.gff -run_name demo_evo
-  nano results/demo_evo/output/demo_evo_SV_CNV.gff
+ [chromosome]    [source]    [unique_id]   [start]   [stop]    [dot] [dot]   [score]   [details]
+VI	cvish	16_anchor_split	55630	55685	.	.	25	node_uid=16;filter=PASS;otherside=XI:513836-513945_breeze;anchor_details=name=YFL038C_cn=1.56_pval=0.7328444325612059;other_details=no_annotated_feature;contig=ATGATATTTCAACATCATGTTTTGCTTAGTAGACTCTTGCGGGCGTTCCATCCGTGTGAAATACATCATTTACACCTCGCTCTGGGTCAAGTAATCAAAAAATACCTCGTGTGGCTGCAAGAGATTGATCGGTATGCAACCTCAACAGTGTtgaagctattggtactgtctcttatactcatctgacgctgccg;
+XI	cvish	16_breeze_split	513836	513945	.	.	25	node_uid=16_anchor;filter=PASS;otherside=VI:55630-55685;anchor_details=name=YFL038C_cn=1.56_pval=0.7328444325612059;other_details=no_annotated_feature;contig=ATGATATTTCAACATCATGTTTTGCTTAGTAGACTCTTGCGGGCGTTCCATCCGTGTGAAATACATCATTTACACCTCGCTCTGGGTCAAGTAATCAAAAAATACCTCGTGTGGCTGCAAGAGATTGATCGGTATGCAACCTCAACAGTGTtgaagctattggtactgtctcttatactcatctgacgctgccg;
  ```
+ In this example the proposed breakpoint "16" spans from chrVI:55630-55685 (anchor) to chrXI:513836-513945 (breezepoint). It has a score of 25. The contig generated by the reads associated with this proposed breakpoint is ```ATGATATTTCAACATCATGTTTTGCTTAGTAGACTCTTGCGGGCGTTCCATCCGTGTGAAATACATCATTTACACCTCGCTCTGGGTCAAGTAATCAAAAAATACCTCGTGTGGCTGCAAGAGATTGATCGGTATGCAACCTCAACAGTGTtgaagctattggtactgtctcttatactcatctgacgctgccg```.
+ In actuality 
+
+
+
+ #### Example of a potential hit using _peaks_ in _evolved_tutorial_SV_CNV.gff_
+ ```
+ [chromosome]    [source]    [unique_id]   [start]   [stop]    [dot] [dot]   [score]   [details]
+VI	cvish	16_anchor_split	55630	55685	.	.	25	node_uid=16;filter=PASS;otherside=XI:513836-513945_breeze;anchor_details=name=YFL038C_cn=1.56_pval=0.7328444325612059;other_details=no_annotated_feature;contig=ATGATATTTCAACATCATGTTTTGCTTAGTAGACTCTTGCGGGCGTTCCATCCGTGTGAAATACATCATTTACACCTCGCTCTGGGTCAAGTAATCAAAAAATACCTCGTGTGGCTGCAAGAGATTGATCGGTATGCAACCTCAACAGTGTtgaagctattggtactgtctcttatactcatctgacgctgccg;
+XI	cvish	16_breeze_split	513836	513945	.	.	25	node_uid=16_anchor;filter=PASS;otherside=VI:55630-55685;anchor_details=name=YFL038C_cn=1.56_pval=0.7328444325612059;other_details=no_annotated_feature;contig=ATGATATTTCAACATCATGTTTTGCTTAGTAGACTCTTGCGGGCGTTCCATCCGTGTGAAATACATCATTTACACCTCGCTCTGGGTCAAGTAATCAAAAAATACCTCGTGTGGCTGCAAGAGATTGATCGGTATGCAACCTCAACAGTGTtgaagctattggtactgtctcttatactcatctgacgctgccg;
+ ```
+ In this example the proposed breakpoint "16" spans from chrVI:55630-55685 (anchor) to chrXI:513836-513945 (breezepoint). It has a score of 25. The contig generated by the reads associated with this proposed breakpoint is ```ATGATATTTCAACATCATGTTTTGCTTAGTAGACTCTTGCGGGCGTTCCATCCGTGTGAAATACATCATTTACACCTCGCTCTGGGTCAAGTAATCAAAAAATACCTCGTGTGGCTGCAAGAGATTGATCGGTATGCAACCTCAACAGTGTtgaagctattggtactgtctcttatactcatctgacgctgccg```.
+ 
+ 
  ### Important notes on select configuration file parameters
  Many parameters can and should be modified for optimal performance, these will be enumerated in full below in the **Configuration section** but several important components are discussed here:
   #### Make an example configuration file
