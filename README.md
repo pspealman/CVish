@@ -2,9 +2,10 @@
 A **C**opy-number **V**ariant and Structural Variant finder for short read sequencing that uses split and discordant reads as well read depth to identify potential breakpoints. 
 (_version 2.0_)
 
-_Important note for NYU HPC users:
- You can load all necessary modules via:_
+__Important Step Zero for NYU HPC users__
  ```
+ srun -c 1 -t 1:00:00 -mem 100000 --pty /bin/bash
+ # or use -run with the -sbatch demo/sbatch_template.txt argument to run with sbatch
  source demo/module_load.sh
  ```
 
@@ -16,22 +17,37 @@ python cvish.py -run -fa <reference_genome.fa> -fastq_1 <n01_fastq.gz> -fastq_2 
 ```
 
 ## Example run:
+ ### Requirements
+ CVish intends to be a requirement lite tool and as such is contained entirely in single python script. It requires the following programs to be installed in the environment:
+
+  * python	(tested on version: 3.8.6)
+  * bwa		(tested on version: 0.7.17) **NB** bwa is required and is not compatible with bwa-mem2 
+  * samtools	(tested on version: 1.14)
+  * bedtools	(tested on version: 2.29.2)
+  * blast	(tested on version: 2.11.0)
+  * samblaster	(tested on version: 0.1.26)
+  * mafft	(tested on version: 7.475)
+  * emboss	(tested on version: 6.6.0)
+    
  ### Install and run preparation:
  ```
  git clone https://github.com/pspealman/CVish.git
  cd CVish
- wget https://ftp.ensembl.org/pub/release-112/fasta/saccharomyces_cerevisiae/dna/Saccharomyces_cerevisiae.R64-1-1.dna.toplevel.fa.gz -O S288C_Ensembl.fa.gz
- ```
+ wget https://ftp.ensembl.org/pub/release-112/fasta/saccharomyces_cerevisiae/dna/Saccharomyces_cerevisiae.R64-1-1.dna.toplevel.fa.gz -O S288C_Ensembl.fa
+ gunzip S288C_Ensembl.fa
+```
  ### Run whole analysis with __-run__ command
  This generates the required split and discordant sam files from fastq files. 
  ```
-  python cvish.py -run -fa S288C_Ensembl.fa.gz -fastq_1 demo/n01_ancestor.fastq.gz -fastq_2 demo/n02_ancestor.fastq.gz -run_name ancestor_demo
+  python cvish.py -run -fa S288C_Ensembl.fa -fastq_1 demo/n01_ancestor.fastq.gz -fastq_2 demo/n02_ancestor.fastq.gz -run_name ancestor_demo
   head results/ancestor_demo/output/ancestor_demo_SV_CNV.gff
  ```
+  **To understand the .gff output check the "_Step Four: Interpreting the output_" section below.
+  
  ### Use first results as filter for second sample [optional]
  In instances where an ancestor and evolved strain are sequenced the results of one run can be used to filter .
  ```
-  python cvish.py -run -fa S288C_Ensembl.fa.gz -fastq_1 demo/n01_evolved.fastq.gz -fastq_2 demo/n02_evolved.fastq.gz -exclude results/ancestor_demo/output/ancestor_demo_SV_CNV.gff -run_name evolved_demo
+  python cvish.py -run -fa S288C_Ensembl.fa -fastq_1 demo/n01_evolved.fastq.gz -fastq_2 demo/n02_evolved.fastq.gz -exclude results/ancestor_demo/output/ancestor_demo_SV_CNV.gff -run_name evolved_demo
   head results/ancestor_demo/output/evolved_demo_SV_CNV.gff
  ```
 
@@ -39,8 +55,8 @@ python cvish.py -run -fa <reference_genome.fa> -fastq_1 <n01_fastq.gz> -fastq_2 
  ### Step One: Preparation
  Before the analysis we need to download a reference genome file - this can be done using the wget command
  ```
-   wget https://ftp.ensembl.org/pub/release-112/fasta/saccharomyces_cerevisiae/dna/Saccharomyces_cerevisiae.R64-1-1.dna.toplevel.fa.gz -O S288C_Ensembl.fa.gz
-   gunzip S288C_Ensembl.fa.gz
+   wget https://ftp.ensembl.org/pub/release-112/fasta/saccharomyces_cerevisiae/dna/Saccharomyces_cerevisiae.R64-1-1.dna.toplevel.fa.gz -O S288C_Ensembl.fa
+   gunzip S288C_Ensembl.fa
    head S288C_Ensembl.fa
  ```
  Note that _Saccharomyces cereivisiae_'s genome in Ensembl uses the 'Roman Numeral' (ie. 'I', 'II', 'XI') chromosome naming convention with the mitochondrial genome named 'Mito'.
@@ -48,7 +64,8 @@ python cvish.py -run -fa <reference_genome.fa> -fastq_1 <n01_fastq.gz> -fastq_2 
  ```
    wget https://ftp.ensembl.org/pub/release-112/gff3/saccharomyces_cerevisiae/Saccharomyces_cerevisiae.R64-1-1.112.gff3.gz -O S288C_Ensembl.gff.gz
    gunzip S288C_Ensembl.gff.gz
-   head -n 30 S288C_Ensembl.gff
+   grep 'YKR' S288C_Ensembl.gff > S288C_Ensembl_XI_R.gff
+   head S288C_Ensembl_XI_R.gff
  ```
  We can verify that the gff is also using the 'Roman Numeral' (ie. 'I', 'II', 'XI') chromosome naming convention.
  Since we want to exclude regions like the rDNA locus from analysis we want to make sure that we select the appropriate 'excluded regions' file.
@@ -60,51 +77,70 @@ python cvish.py -run -fa <reference_genome.fa> -fastq_1 <n01_fastq.gz> -fastq_2 
  ### Step Two: Run Command on Ancestor Strain
  We're first going to analyze the sequencing data for the Ancestor while fitlering regions listed in the excluded_regions file using the _-exclude_ argument.  
  ```
-   python cvish.py -run -fa S288C_Ensembl.fa.gz -fastq_1 demo/n01_ancestor.fastq.gz -fastq_2 demo/n02_ancestor.fastq.gz -exclude filter_files/S288C_Ensembl_exclude_regions.bed -run_name ancestor_tutorial
-   head results/ancestor_demo/output/ancestor_tutorial_SV_CNV.gff
+   python cvish.py -run -fa S288C_Ensembl.fa \
+	-fastq_1 demo/n01_ancestor.fastq.gz \
+	-fastq_2 demo/n02_ancestor.fastq.gz \
+	-exclude filter_files/S288C_Ensembl_exclude_regions.bed \
+	-run_name ancestor_tutorial
+
+   head results/ancestor_tutorial/output/ancestor_tutorial_SV_CNV.gff
  ```
  A quick look at the _ancestor_tutorial_SV_CNV.gff_ will show a combination of hits and excluded_regions.
  
  ### Step Three: Run Command on Evolved Strain
  Now we're going to analyze the sequencing data for the Evolved strain this time filtering regions in the ancestor_tutorial_SV_CNV.gff   
  ```
-   python cvish.py -run -fa S288C_Ensembl.fa.gz -fastq_1 demo/n01_evolved.fastq.gz -fastq_2 demo/n02_evolved.fastq.gz -exclude results/ancestor_demo/output/ancestor_tutorial_SV_CNV.gff -run_name evolved_tutorial
-   head results/ancestor_demo/output/evolved_tutorial_SV_CNV.gff
+   python cvish.py -run \
+	-fa S288C_Ensembl.fa \
+	-fastq_1 demo/n01_evolved.fastq.gz \
+	-fastq_2 demo/n02_evolved.fastq.gz \
+	-gff S288C_Ensembl_XI_R.gff \
+	-exclude results/ancestor_tutorial/output//ancestor_tutorial_SV_CNV.gff \
+	-run_name evolved_tutorial
+
+   head results/evolved_tutorial/output/evolved_tutorial_SV_CNV.gff
  ```
  Checking the _evolved_tutorial_SV_CNV.gff_ we find that the excluded regions from both the original _S288C_Ensembl_exclude_regions.bed_ and the _ancestor_tutorial_SV_CNV.gff_ are now present.
-
+ ```
+  head results/evolved_tutorial/output/evolved_tutorial_feature_copy_number.tsv
+ ```
+ Because we included the _-gff_ command CVish also generated a read depth estimation for each gene, the results of which are shown in the _feature_copy_number.tsv_ file. **note:** because the demo files only contain a small number of reads on ChrXI, the read depth estimations are not meaningful, they are only included here as an example.
+ 
  ### Step Four: Interpreting the output
  
  #### How to make sense of the results in the _SV_CNV.gff_ file
  The _SV_CNV.gff_ file follows a simple convention for highlighting breakpoints. Each breakpoint has at least two components: an anchor and a breezepoint. The anchor, by definition, contains a uniquely mapping sequence. Conversely, the breezepoint can map to numerous places with no restriction, this allows for potential breezepoints to map to repeat or low-complexity regions, such as gene homologs and transposon elements. When possible the assemdbled contig that generated the breakpoint is included.
 
- #### Example of a potential hit using split read _unique_sequences_ in _ancestor_tutorial_SV_CNV.gff_
+ ##### Example of a potential hit using split read _unique_sequences_ in _ancestor_tutorial_SV_CNV.gff_
  ```
  [chromosome]    [source]    [unique_id]   [start]   [stop]    [dot] [dot]   [score]   [details]
-VI	cvish	16_anchor_split	55630	55685	.	.	25	node_uid=16;filter=PASS;otherside=XI:513836-513945_breeze;anchor_details=name=YFL038C_cn=1.56_pval=0.7328444325612059;other_details=no_annotated_feature;contig=ATGATATTTCAACATCATGTTTTGCTTAGTAGACTCTTGCGGGCGTTCCATCCGTGTGAAATACATCATTTACACCTCGCTCTGGGTCAAGTAATCAAAAAATACCTCGTGTGGCTGCAAGAGATTGATCGGTATGCAACCTCAACAGTGTtgaagctattggtactgtctcttatactcatctgacgctgccg;
-XI	cvish	16_breeze_split	513836	513945	.	.	25	node_uid=16_anchor;filter=PASS;otherside=VI:55630-55685;anchor_details=name=YFL038C_cn=1.56_pval=0.7328444325612059;other_details=no_annotated_feature;contig=ATGATATTTCAACATCATGTTTTGCTTAGTAGACTCTTGCGGGCGTTCCATCCGTGTGAAATACATCATTTACACCTCGCTCTGGGTCAAGTAATCAAAAAATACCTCGTGTGGCTGCAAGAGATTGATCGGTATGCAACCTCAACAGTGTtgaagctattggtactgtctcttatactcatctgacgctgccg;
+XI	cvish	14_anchor_split	513833	513945	.	.	32893	node_uid=14;filter=PASS;otherside=VI:55618-55685_breeze;no_ref_gff;contig=CAGATGATATTTCAACATCATGTTTTGCTTAGTAGACTCTTGCGGGCGTTCCATCCGTGTGAAATACATCATTTACACCTCGCTCTGGGTCAAGTAATCAAAAAATACCTCGTGTGGCTGCAAGAGATTGATCGGTATGCAACCTCAACAGtgttgaagctattggtaggtaacaagtgt;read_weight=1207.0;rel_chromosome_rd=1440.0;depth_median=12.0
+VI	cvish	14_breeze_split	55618	55685	.	.	32893	node_uid=14;filter=PASS;otherside=XI:513833-513945;no_ref_gff;contig=CAGATGATATTTCAACATCATGTTTTGCTTAGTAGACTCTTGCGGGCGTTCCATCCGTGTGAAATACATCATTTACACCTCGCTCTGGGTCAAGTAATCAAAAAATACCTCGTGTGGCTGCAAGAGATTGATCGGTATGCAACCTCAACAGtgttgaagctattggtaggtaacaagtgt;read_weight=204.0;rel_chromosome_rd=202.0;depth_median=2.0
  ```
- In this example the proposed breakpoint "16" spans from chrVI:55630-55685 (anchor) to chrXI:513836-513945 (breezepoint). It has a score of 25. The contig generated by the reads associated with this proposed breakpoint is ```ATGATATTTCAACATCATGTTTTGCTTAGTAGACTCTTGCGGGCGTTCCATCCGTGTGAAATACATCATTTACACCTCGCTCTGGGTCAAGTAATCAAAAAATACCTCGTGTGGCTGCAAGAGATTGATCGGTATGCAACCTCAACAGTGTtgaagctattggtactgtctcttatactcatctgacgctgccg```.
- In actuality 
+ In this example the proposed splitread breakpoint "14" spans from chrXI:513833-513945 (anchor) to chrVI:55618-55685 (breezepoint). It has a score of 32893. The contig generated by the reads associated with this proposed breakpoint is ```CAGATGATATTTCAACATCATGTTTTGCTTAGTAGACTCTTGCGGGCGTTCCATCCGTGTGAAATACATCATTTACACCTCGCTCTGGGTCAAGTAATCAAAAAATACCTCGTGTGGCTGCAAGAGATTGATCGGTATGCAACCTCAACAGtgttgaagctattggtaggtaacaagtgt```. Note that this is in the ancestor strain, it is actually the signature of an ACT1 promoter placed before the mCitrine reporter (Lauer et al. 2018). 
 
-
-
- #### Example of a potential hit using _peaks_ in _evolved_tutorial_SV_CNV.gff_
+ ##### Example of a filtered _excluded_region_ in _ancestor_tutorial_SV_CNV.gff_
  ```
  [chromosome]    [source]    [unique_id]   [start]   [stop]    [dot] [dot]   [score]   [details]
-VI	cvish	16_anchor_split	55630	55685	.	.	25	node_uid=16;filter=PASS;otherside=XI:513836-513945_breeze;anchor_details=name=YFL038C_cn=1.56_pval=0.7328444325612059;other_details=no_annotated_feature;contig=ATGATATTTCAACATCATGTTTTGCTTAGTAGACTCTTGCGGGCGTTCCATCCGTGTGAAATACATCATTTACACCTCGCTCTGGGTCAAGTAATCAAAAAATACCTCGTGTGGCTGCAAGAGATTGATCGGTATGCAACCTCAACAGTGTtgaagctattggtactgtctcttatactcatctgacgctgccg;
-XI	cvish	16_breeze_split	513836	513945	.	.	25	node_uid=16_anchor;filter=PASS;otherside=VI:55630-55685;anchor_details=name=YFL038C_cn=1.56_pval=0.7328444325612059;other_details=no_annotated_feature;contig=ATGATATTTCAACATCATGTTTTGCTTAGTAGACTCTTGCGGGCGTTCCATCCGTGTGAAATACATCATTTACACCTCGCTCTGGGTCAAGTAATCAAAAAATACCTCGTGTGGCTGCAAGAGATTGATCGGTATGCAACCTCAACAGTGTtgaagctattggtactgtctcttatactcatctgacgctgccg;
+#Mito	cvish	region_excluded	1	100000	.	.	0	node_uid=Mito_0;filter=excluded_by_region
  ```
- In this example the proposed breakpoint "16" spans from chrVI:55630-55685 (anchor) to chrXI:513836-513945 (breezepoint). It has a score of 25. The contig generated by the reads associated with this proposed breakpoint is ```ATGATATTTCAACATCATGTTTTGCTTAGTAGACTCTTGCGGGCGTTCCATCCGTGTGAAATACATCATTTACACCTCGCTCTGGGTCAAGTAATCAAAAAATACCTCGTGTGGCTGCAAGAGATTGATCGGTATGCAACCTCAACAGTGTtgaagctattggtactgtctcttatactcatctgacgctgccg```.
+ In addition to potential breakpoints, the gff file also includes regions excluded from analysis. In this case these are imported from the _S288C_Ensembl_exclude_regions.bed_ file using the _-exclude_ argument. These are commented out using '#' and will not be visualized if the gff is loaded in IGV (or equivalent genome browsers).
  
+ ##### Example of a potential hit using _peaks_ in _evolved_tutorial_SV_CNV.gff_
+ ```
+ [chromosome]    [source]    [unique_id]   [start]   [stop]    [dot] [dot]   [score]   [details]
+XI	cvish	3_peak	479685	479731	.	.	24	node_uid=peak_3;filter=PASS;otherside=unknown;peak_detected_no_unique_sequence;contig=na;read_count=47.0;rel_chromosome_rd=213.0;depth_median=1.0
+ ```
+ Finally, we can analyze the output from the evolved strain. In addition to filtered regions imported from _ancestor_tutorial_SV_CNV.gff_ using the _-exclude_ command, we also find novel potential hits, such as '3_peak' shown above. Unlike split read breakpoints based on _unique_sequences_ "peaks" are substantial pileups of splitreads (by default, approximately >1% of splitreads). Because peaks are not derived from unique sequences, no contig is reported for their identification. 
  
- ### Important notes on select configuration file parameters
+ ### Useful optional arguments
  Many parameters can and should be modified for optimal performance, these will be enumerated in full below in the **Configuration section** but several important components are discussed here:
+  
   #### Make an example configuration file
   You can always make a template configuration file by using the ```make_template_file``` command:
-```
+  ```
   python cvish.py -template example.tsv
-```
+  ```
   #### Ploidy
   CVish runs as haploid by defualt, this can be adjusted by setting the ```expected_ploidy``` value to some non-zero integer.
   
@@ -113,19 +149,12 @@ XI	cvish	16_breeze_split	513836	513945	.	.	25	node_uid=16_anchor;filter=PASS;oth
   Finally, breakpoint predictions can be generated by both split-reads and discordant reads. Utilizing both is more informative, and increases specificity and accuracy, but can increase run times 10-20% above what is seen if split-reads alone are used. To force only split reads to be used set the ```with_disco``` parameter to false.
   Preloaded alternative defaults are available in the configuration file, ```high_sensitivity_mode``` has lower thresholds for inclusion and analysis and should detect weaker signals, at the risk of increasing FDR. While ```low_sensitivity_mode``` has even higher thresholds than the default and should exclude more, and have lower FDR.  
  
-  #### _-run_ command optional parameters
+  #### _-sbatch_ to launch SLURM scheduled job
   The run command can be used incongunction with modules and SLURM's sbatch job scheduler using the ```module_filename``` and ```sbatch_filename``` parameters. To generate a shell executable, but not run it, use the ```-no_run``` argument from the command line. 
-  
-  #### Filters for improved performance:
-  Using filters can improve the speed and performance of CVish. These filters include:
-   * Read depth filters ```depth_filter_bed``` which limit read depth calculations to regions of interest and avoid read depth measures over regions such as the rDNA locus. An example of this is located in: ```filter_files/saccharomyces_cerevisiae_chromosome_NCBI_rDNA_filter.bed``` 
-   * Region filters ```filter_bed``` and ```filter_gff``` prevent breakpoint predicitions from occuring within the defined regions. These can be used to filter problematic regions, such as low complexity regions as in this telomere example:
-```filter_files/saccharomyces_cerevisiae_chromosome_NCBI_filter_telomeres.bed```
-Or regions that are repetitive throughout the genome, such as in this transposon example:
-```filter_files/saccharomyces_cerevisiae_chromosome_transposon_GAP1.gff```
-   * Ancestor filters ```filter_bed``` and ```filter_gff``` are also used to prevent breakpoint predictions from occurring in regions already identified in the ancestor. An example of this can be seen in the __-run__ section above:
-```results/demo_anc/output/demo_anc_SV_CNV.gff```
-
+  ```
+python cvish.py -run -sbatch demo/sbatch_template.txt -fa S288C_Ensembl.fa -fastq_1 demo/n01_ancestor.fastq.gz -fastq_2 demo/n02_ancestor.fastq.gz -run_name ancestor_sbatch
+  ```
+<!-- 
 ## Using reference GFF files
    One optional feature of CVish is that it can calculate expected copy number over any region. 
    Using this option requires supplying a GFF that has the same coordinate system as the reference genome FASTA file (so don't use the Ensembl genome GFF with the NCBI genome FASTA, for example). This can be set in the config file at the ```ref_gff``` line as such: 
@@ -145,10 +174,6 @@ NC_001140.6	RefSeq	CDS	445	1897	.	-	1	ID=cds2355;Parent=rna2505;Dbxref=SGD:S0000
 ```
 ref_gff_feature	gene
 gff_feature_name	locus_tag=
-```
-   Finally, if you are using a non-haploid organism you will need to specif the expected ploidy number by editing the ```expected_ploidy``` parameter:
-```
-expected_ploidy 2
 ```
 
 ## Output Analysis 
@@ -214,19 +239,9 @@ This figure shows reads distributions over the _GAP1_ neighborhood on chromosome
 The figure also shows the discordant (orange) and split reads (red) extracted from the Illumina short reads. Here see some shallow distribution of discordant reads across the whole region. Conversely, we find a distinct peak of split reads at three sites. From the right to the left, the first and largest peak (14 reads deep) corresponds with **Hypothesis 16**, it also has 5 discordant reads that support this hypothesis as well. And it is a known true positive as well, as it is the known insertion site of the ACT1 promoter containing construct. The next peak has no corresponding Hypothesis but does correspond to the homopolymer region spanning chrXI:518102-518142. Because this region has such low sequence complexity these reads are filtered from our analysis. Finally, there is the third peak, corresponding to both sides of **Hypothesis 0**, this is a low scoring hypothesis and indeed it is only supported by two split reads and no discordant reads.
 
 # Detailed manual:
- ## Requirements
- CVish intends to be a requirement lite tool and as such is contained entirely in single python script. It requires the following programs to be installed in the environment:
 
-  * python	(tested on version: 3.8.6)
-  * bwa		(tested on version: 0.7.17) **NB** bwa is required and is not compatible with bwa-mem2 
-  * samtools	(tested on version: 1.14)
-  * bedtools	(tested on version: 2.29.2)
-  * blast	(tested on version: 2.11.0)
-  * samblaster	(tested on version: 0.1.26)
-  * mafft	(tested on version: 7.475)
-  * emboss	(tested on version: 6.6.0)
 
-<!--
+
 ## Built in demo and test 
  For demonstration of command syntax use:
   ```
