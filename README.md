@@ -1,5 +1,6 @@
 # CVish
 A **C**opy-number **V**ariant and Structural Variant finder for short read sequencing that uses split and discordant reads as well read depth to identify potential breakpoints. 
+
 (_version 2.0_)
 
 __Important Step Zero for NYU HPC users__
@@ -33,7 +34,7 @@ python cvish.py -run -fa <reference_genome.fa> -fastq_1 <n01_fastq.gz> -fastq_2 
  ```
  git clone https://github.com/pspealman/CVish.git
  cd CVish
- wget https://ftp.ensembl.org/pub/release-112/fasta/saccharomyces_cerevisiae/dna/Saccharomyces_cerevisiae.R64-1-1.dna.toplevel.fa.gz -O S288C_Ensembl.fa
+ wget https://ftp.ensembl.org/pub/release-112/fasta/saccharomyces_cerevisiae/dna/Saccharomyces_cerevisiae.R64-1-1.dna.toplevel.fa.gz -O S288C_Ensembl.fa.gz
  gunzip S288C_Ensembl.fa
 ```
  ### Run whole analysis with __-run__ command
@@ -48,7 +49,7 @@ python cvish.py -run -fa <reference_genome.fa> -fastq_1 <n01_fastq.gz> -fastq_2 
  In instances where an ancestor and evolved strain are sequenced the results of one run can be used to filter .
  ```
   python cvish.py -run -fa S288C_Ensembl.fa -fastq_1 demo/n01_evolved.fastq.gz -fastq_2 demo/n02_evolved.fastq.gz -exclude results/ancestor_demo/output/ancestor_demo_SV_CNV.gff -run_name evolved_demo
-  head results/ancestor_demo/output/evolved_demo_SV_CNV.gff
+  head results/evolved_demo/output/evolved_demo_SV_CNV.gff
  ```
 
 ## Basic Analysis Tutorial:
@@ -64,10 +65,12 @@ python cvish.py -run -fa <reference_genome.fa> -fastq_1 <n01_fastq.gz> -fastq_2 
  ```
    wget https://ftp.ensembl.org/pub/release-112/gff3/saccharomyces_cerevisiae/Saccharomyces_cerevisiae.R64-1-1.112.gff3.gz -O S288C_Ensembl.gff.gz
    gunzip S288C_Ensembl.gff.gz
-   grep 'YKR' S288C_Ensembl.gff > S288C_Ensembl_XI_R.gff
+   # Taking a subset (ie the right arm of chromosome XI) of features for demonstration purposes.
+   grep 'YKR' S288C_Ensembl.gff > S288C_Ensembl_XI_R.gff 
    head S288C_Ensembl_XI_R.gff
  ```
- We can verify that the gff is also using the 'Roman Numeral' (ie. 'I', 'II', 'XI') chromosome naming convention.
+ We can verify that the gff is also using the 'Roman Numeral' (ie. 'I', 'II', 'XI') chromosome naming convention. Note that, for demonstration purposes the gff is subset to only focus on the right arm of chromosome XI. This _XI_R.gff will be used later to calculate relative read depth for each gene in the gff, so it is truncated here to save time.
+ 
  Since we want to exclude regions like the rDNA locus from analysis we want to make sure that we select the appropriate 'excluded regions' file.
  ```
    head filter_files/S288C_Ensembl_exclude_regions.bed
