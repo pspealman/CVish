@@ -4,57 +4,49 @@ CVish
 # Purpose: Uses split and discordant reads to identify potetnial genomic breakpoints
 # further processing is used to extract context and sequence.
 
-#change log
-(Initial Release - Public Beta: Down to Earth)
-Version 1.0 2023.05.09 (arderley)
-    Rename project from 'erisapfel' to 'CVish'
-    _x_ Add template() function
-    _x_ Add config() function
-    _x_ Improved sequence clustering
-    _x_ Improved breakpoint overlap reduction
-    _x_ Added gff dependant powered feature depth calculator 
-    _x_ update help()
-    _x_ update demo()
-    _x_ update test()
-    _x_ update run()
+#change log    
+Version 1.4 2024.07.31 (glozzom)
+    _x_ Use better demo data (chromo VI, XI)
+        _update demo.gff
+    _x_ split-read peak identifier
+    _x_ No requirement for config file
+    _x_ Sequencing Depth weighted scoring
+    _x_ handle .gz fasta reference files
     
-Version 1.1 2023.05.20 (mitaclau)
-    _x_ Check contig reporting in gff, vcf
-    _x_ Add CLI score filter so lines aren't added to the gff and filtered from the vcf
-    _x_ Add clean() function
-    _x_ Add disco optimization improvement
+Version 1.5 2024.08.02 (nessinfulleter)
+    _x_ low mapq filter for peak identifier
     
-Version 1.2 2023.07.07 (canorting)
-    _x_ ploidy option
-    _x_ runmode option
-    _x_ bwa index, note in document that this is not bwa-mem2
-    _x_ removed orphaned bcftools, tabix
-    _x_ added cn_weights and sv_weights to final score 
-
-Version 1.3 2024.01.29 (heimaless)
-    _x_ fixed sparse discordant reads normalization (-call) 
-
+Version 2.0 2024.08.09 (whisy)
+    _x_ Unify and import filters further upstream in analysis
+    _x_ Add gff dependant filter maker
+    _x_ Add verbose() function
+    _x_ Implement 'bwa index -a bwtsw' command
+    _x_ test reference gff and feature_copy_number table generation.
+        
 Future versions:
-    ___ Better chromosome filtering with a naming convention check
-    ___ Use better demo data (chromo VI, XI)
+    ___ fix .gz fasta reference bug ("index failure error")
+    ___ Better chromosome filtering with a naming convention check  
     ___ Stop double gunzipping fastq.gz
-    ___ Progress tracker
-    ___ Add verbose() function
-    ___ Unify and import filters further upstream in analysis 
-    ___ Add gff dependant filter maker
     ___ Implement Single End option
 
 @author: Pieter Spealman ps163@nyu.edu
 """
 
+'''
+python cvish.py -run -fa S288C_R64_demo.fa -fastq_1 HKCGLBGXM_n01_1657.fastq -fastq_2 HKCGLBGXM_n01_1657.fastq -exclude filter_files/saccharomyces_cerevisiae_chromosome_Ensembl_rDNA_exclude.bed -run_name DGY1657_cvish
+python cvish.py -run -fa S288C_R64_demo.fa -fastq_1 HKFYTBGX2_n01_mini02_partii_59.fastq -fastq_2 HKFYTBGX2_n02_mini02_partii_59.fastq -exclude filter_files/saccharomyces_cerevisiae_chromosome_Ensembl_rDNA_exclude.bed -run_name DGY1735_cvish
+
+'''
+
 """Requirements:
-bwa         0.7.17
-samtools    1.14
-bedtools    2.29.2
-blast+      2.11.0
-samblaster  0.1.26
-mafft       7.475
-emboss      6.6.0
+bwa	0.7.17
+samtools	1.14
+bedtools	2.29.2
+blast+	2.11.0
+samblaster	0.1.26
+mafft	7.475
+emboss	6.6.0
+bcftools	1.14
 """
 #
 import os
@@ -154,7 +146,6 @@ def eval_type(resource_dict, param, value):
         return(resource_dict)
     
 def handle_outfile(p_output):
-    #TODO check that this works
     if '/' in p_output:
         output_dir = str(p_output.rsplit('/',1)[0]+'/')
         output_file = p_output.rsplit('/',1)[1]
@@ -356,14 +347,20 @@ parser.add_argument('-filter_chr', '--filter_chromosome',
                     default = False, 
                     nargs='+')
 
+parser.add_argument('-exclude', '--exclude_regions_file', 
+                    help = "[optional] Path to BED format file that contains regions to remove."
+                    "Implements samtools '-U -L' argument immediately after alignment to Reference Genome.",
+                    default = False)
+
 parser.add_argument('-depth_filter', '--depth_filter_bed',
                     help = "[optional] bed file with regions to include during 'depth_analysis'",
                     default = False)
 
 # Identification weights
+# TODO - check the SRD1 site for filtering when the MAPQ is not set to 50
 parser.add_argument('-qval', '--mapq_val',
                     help = 'aligned minimum MAPQ quality score',
-                    default = 50)
+                    default = -1)
 
 parser.add_argument('-flank','--filter_flanking',
                     help = 'flanking size (bp) for peak calls',
@@ -427,7 +424,6 @@ parser.add_argument('-ploidy', "--expected_ploidy",
                     help="[optional] This effects the '_feature_copy_number.tsv' output by dividing the relative copy number by the ploidy number",
                     default = 1, type=int)
 
-
 ''' One Line Run '''
 parser.add_argument('-run',"--run", help="Single line command", action='store_true')
 parser.add_argument('-sbatch', '--sbatch_filename', help="[optional, --run] Run as SBATCH", default = False)
@@ -484,6 +480,48 @@ def cleanup_chromo_set(is_str):
     
     return(set([is_str]))
 
+def convert_filter_to_bed(exclude_regions_filename, results_dir):
+    
+    extension = exclude_regions_filename[-4:]
+    extension = extension.lower()
+    
+    if 'gff' in extension:    
+        temp_filter_bed_filename = ('{}/_temp_filter_bed_file.bed').format(results_dir)
+        temp_filter_bed_file = open(temp_filter_bed_filename, 'w')
+    
+        exclude_regions_file = open(exclude_regions_filename)
+        ct = 0 
+    
+        for line in exclude_regions_file:
+            #print(line)
+            if (line[0] != '#') or ('excluded' in line):
+                line = line.strip()
+                #removes hash filter in the event of an excluded region
+                line = line.replace('#', '')
+
+                # chrVII	cvish	9_peak	323363	323394	.	.	0	node_uid=
+                name = ('filter_feature_{}').format(ct)
+                chromo = line.split('\t')[0]
+                left = int(line.split('\t')[3])
+                right = int(line.split('\t')[4])
+                
+                #gff base 1 -> bed base 0
+                left -= 1
+                #XIV	625851	625860	YNL003C.625851.625860.Tt	0.9999979734420776	-
+                outline = ('{chromo}\t{left}\t{right}\t{name}\t.\t.\n').format(
+                    chromo = chromo,
+                    left = left,
+                    right = right,
+                    name = name)
+                
+                temp_filter_bed_file.write(outline)
+                
+                ct += 1
+                
+        temp_filter_bed_file.close()
+    
+    return(temp_filter_bed_filename)
+
 def load_configuration_file(config_file_name):
     config_file = open(config_file_name)
                 
@@ -527,7 +565,16 @@ def load_configuration_file(config_file_name):
                 
             if isinstance(resource_dict['filter_chromosome'], list):
                 clean_fc = resource_dict['filter_chromosome']
-                resource_dict['filter_chromosome'] = set(clean_fc)             
+                resource_dict['filter_chromosome'] = set(clean_fc)   
+    
+    if args.exclude_regions_file:
+        exclude_regions_file = args.exclude_regions_file
+        
+        if exclude_regions_file[-4:] == '.gff':
+            #results_dir = resource_dict['results_dir']
+            exclude_regions_file = convert_filter_to_bed(exclude_regions_file, temp_dir)
+            
+        resource_dict['exclude_regions_file'] = exclude_regions_file
                     
     if args.with_disco:
         resource_dict['with_disco'] = args.with_disco
@@ -557,7 +604,10 @@ def load_configuration_file(config_file_name):
         resource_dict['min_confidence_score'] = 1.5
         resource_dict['cnv_min_length'] = 400
         resource_dict['min_purity'] = 0.9
- 
+
+    if args.verbose:
+        resource_dict['verbose']=args.verbose
+
     print('### Configuration Parameters ###')
     for param in resource_dict:
         print(param, resource_dict[param], type(resource_dict[param]))
@@ -575,6 +625,7 @@ def generate_config_file():
     resource_file_name = io_make()
     #Required parameters:
     resource_dict = {'with_disco':args.with_disco,
+                     'exclude_regions_file':args.exclude_regions_file,
                      'depth_region_filter':args.depth_filter_bed,
                      'ref_gff':args.ref_gff_file,
                      'ref_gff_feature':args.ref_gff_feature,
@@ -600,7 +651,8 @@ def generate_config_file():
                      'expected_ploidy':args.expected_ploidy,
                      'high_sensitivity_mode':args.high_sensitivity_mode,
                      'low_sensitivity_mode':args.low_sensitivity_mode,
-                     'skip_fasta_index':args.skip_fasta_index
+                     'skip_fasta_index':args.skip_fasta_index,
+                     'verbose':args.verbose,
                      }
     
     resource_dict['run_name']=args.run_name
@@ -608,7 +660,7 @@ def generate_config_file():
     resource_dict['genome_fa']=args.fa_file
     resource_dict['fastq_1']=args.fastq_1
     resource_dict['fastq_2']=args.fastq_2
-    
+        
     if args.filter_chromosome:
         if not isinstance(args.filter_chromosome,set):
             resource_dict['filter_chromosome']=set(args.filter_chromosome)
@@ -621,6 +673,15 @@ def generate_config_file():
         resource_dict['read_types'] = set(args.read_type_list)
     else:
         resource_dict['read_types'] = set(['RD','discordant','split'])
+        
+    if args.exclude_regions_file:
+        exclude_regions_file = args.exclude_regions_file
+        
+        if exclude_regions_file[-4:] != '.bed':
+            #results_dir = resource_dict['results_dir']
+            exclude_regions_file = convert_filter_to_bed(exclude_regions_file, temp_dir)
+            
+        resource_dict['exclude_regions_file'] = exclude_regions_file
             
     io_append(resource_dict)
     
@@ -628,8 +689,9 @@ def generate_config_file():
 
 def generate_run_file():
     ### creates a shell script enabling the whole pipeline to be run
+    
     '''
-    #python cvish.py -run -fa ${ref_fa} -fastq_1 ${new_fastq_dir}/${sample_name}_n01.fastq -fastq_2 ${new_fastq_dir}/${sample_name}_n02.fastq -run_name ${sample_name} -config ${sample_name}_config.tsv -run_name ${sample_name}
+    #python cvish.py -run -fa ${ref_fa} -fastq_1 ${new_fastq_dir}/${sample_name}_n01.fastq -fastq_2 ${new_fastq_dir}/${sample_name}_n02.fastq -run_name ${sample_name}
     '''
     if args.load_configuration_file:
         resource_dict = load_configuration_file(args.load_configuration_file)
@@ -661,7 +723,7 @@ def generate_run_file():
     ref_fa = resource_dict['genome_fa']
     fastq_1 = resource_dict['fastq_1']
     fastq_2 = resource_dict['fastq_2']
-    
+        
     if args.filter_gff:
         resource_dict['filter_gff'] = args.filter_gff
         
@@ -677,6 +739,12 @@ def generate_run_file():
                    config_file_name = config_file_name)
                    
     outfile.write(ref_line)
+    
+    outline = ('echo "Starting run..."\n'
+               '\techo "Running -config"\n'
+               'python cvish.py -config ${conffile} -fa $reffa -fastq_1 $fastq1 -fastq_2 $fastq2 -run_name $name\n')
+    
+    outfile.write(outline)
     
     outline = ('echo "Starting run..."\n'
                '\techo "Running -config"\n'
@@ -719,13 +787,13 @@ def generate_run_file():
     if not args.no_run:
         if sbatch_file_name:
             outline = ('Beginning sbatch run: {}').format(outfile_name)
-            print (outline)
+            print(outline)
             bash_command = ('sbatch {output_file}').format(output_file=outfile_name)
             subprocess.run([bash_command],stderr=subprocess.STDOUT,shell=True)
             
         else:
             outline = ('Beginning run: {}').format(outfile_name)
-            print (outline)
+            print(outline)
             bash_command = ('bash {output_file}').format(output_file=outfile_name)
             subprocess.run([bash_command],stderr=subprocess.STDOUT,shell=True)
 
@@ -837,21 +905,6 @@ def reverse_compliment(seq):
         rc_seq += c_nt
         
     return(rc_seq)
-
-def convert_sort(outfile_name):
-    bash_command = ('samtools view -Sb {output_file_cs}.sam > {output_file_cs}_u.bam').format(output_file_cs=outfile_name)
-    subprocess.run([bash_command],stderr=subprocess.STDOUT,shell=True)
-
-    bash_command = ('samtools sort -T tmp_sort -o {output_file_cs}.bam {output_file_cs}_u.bam').format(output_file_cs=outfile_name)
-    subprocess.run([bash_command],stderr=subprocess.STDOUT,shell=True)
-        
-    bash_command = ('samtools index {output_file_cs}.bam').format(output_file_cs=outfile_name)
-    subprocess.run([bash_command],stderr=subprocess.STDOUT,shell=True)
-        
-    bash_command = ('rm {output_file_cs}.sam {output_file_cs}_u.bam').format(output_file_cs=outfile_name)
-    subprocess.run([bash_command],stderr=subprocess.STDOUT,shell=True)
-        
-    return()
 
 def parse_cigar(cigar, run_mode):
     """This function calculates the offset for the read based on the match
@@ -1160,7 +1213,7 @@ def make_gene_by_gene_copy_number(each_sample, ref_gff_filename, fg_median, fg_m
     feature_map = {}
         
     feature_depth_filename = ('{}/{}_feature_copy_number.tsv').format(final_output_dir, each_sample)
-    
+        
     feature_depth_file = open(feature_depth_filename, 'w')
     
     header = ('ID\tchromo\tstart\tstop\tsign\tsub_median\tsub_mean\tsub_std\t'
@@ -1168,6 +1221,8 @@ def make_gene_by_gene_copy_number(each_sample, ref_gff_filename, fg_median, fg_m
     feature_depth_file.write(header)
             
     ref_gff = open(ref_gff_filename)
+    
+    ct = 0
     
     for line in ref_gff:
         if line[0]!='#':
@@ -1189,6 +1244,14 @@ def make_gene_by_gene_copy_number(each_sample, ref_gff_filename, fg_median, fg_m
                             name = deets
                     else:
                         name = deets
+                        
+                    if (ct % 100 == 0):
+                        outline = ('Processing gene-by-gene read depth '
+                                   '- processed {ct},'
+                                   ' currently processing {name} ...').format(
+                                       ct = ct, 
+                                       name = name)
+                        print(outline)
                         
                     feature_map = gff_to_feature_map(feature_map, name, chromo, start, stop)
                 
@@ -1228,6 +1291,8 @@ def make_gene_by_gene_copy_number(each_sample, ref_gff_filename, fg_median, fg_m
                         
                     locus = ('{},{},{}').format(chromo, start, stop)
                     cn_dict[name][locus] = {'cn':int_depth, 'pval':p_value}
+                    
+                    ct += 1
                                                      
     feature_depth_file.close()
     
@@ -1246,28 +1311,76 @@ def run_mpileup(infile_name, each_sample, runmode, filter_by_bed, filter_bed):
     if runmode == 'RD':
         print('\tRunning samtools to determine sample depth...')
         if filter_by_bed:
-            bashCommand = ('samtools mpileup -B -f {} {} -l {} -a -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)        
+            bashCommand = ('samtools mpileup -B -f {fa_file} {infile_name} '
+                           '-l {filter_bed} -a '
+                           '-o {pickles_dir}/{each_sample}_{runmode}.mpileup').format(
+                               fa_file = fa_file, 
+                               infile_name = infile_name, 
+                               filter_bed = filter_bed, 
+                               pickles_dir = pickles_dir, 
+                               each_sample = each_sample, 
+                               runmode = runmode)        
         else:
-            bashCommand = ('samtools mpileup -B -f {} {} -a -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)                        
+            #bashCommand = ('samtools mpileup -B -f {} {} -a -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)  
+            bashCommand = ('samtools mpileup -B -f {fa_file} {infile_name} '
+                           '-a -o {pickles_dir}/{each_sample}_{runmode}.mpileup').format(
+                               fa_file = fa_file, 
+                               infile_name = infile_name,  
+                               pickles_dir = pickles_dir, 
+                               each_sample = each_sample, 
+                               runmode = runmode) 
+                      
         print(bashCommand)
         subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
 
     if runmode == 'discordant' or runmode == 'disco':
         print('\tRunning samtools to determine discordant read depth...')
         if filter_by_bed:
-            bashCommand = ('samtools mpileup -B -f {} {} -l {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)            
+            #bashCommand = ('samtools mpileup -B -f {} {} -l {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)  
+            bashCommand = ('samtools mpileup -B -f {fa_file} {infile_name} '
+                           '-l {filter_bed} -a -A'
+                           '-o {pickles_dir}/{each_sample}_{runmode}.mpileup').format(
+                               fa_file = fa_file, 
+                               infile_name = infile_name, 
+                               filter_bed = filter_bed, 
+                               pickles_dir = pickles_dir, 
+                               each_sample = each_sample, 
+                               runmode = runmode) 
         else:
-            bashCommand = ('samtools mpileup -B -f {} {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)
+            #bashCommand = ('samtools mpileup -B -f {} {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)
+            bashCommand = ('samtools mpileup -B -f {fa_file} {infile_name} '
+                           '-a -A -o {pickles_dir}/{each_sample}_{runmode}.mpileup').format(
+                               fa_file = fa_file, 
+                               infile_name = infile_name, 
+                               pickles_dir = pickles_dir, 
+                               each_sample = each_sample, 
+                               runmode = runmode) 
         print(bashCommand)
         subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
         
     if runmode == 'split':
         print('\tRunning samtools to determine split read depth...')
         if filter_by_bed:
-            bashCommand = ('samtools mpileup -B -f {} {} -l {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)     
+            #bashCommand = ('samtools mpileup -B -f {} {} -l {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, filter_bed, pickles_dir, each_sample, runmode)  
+            bashCommand = ('samtools mpileup -B -f {fa_file} {infile_name} '
+                           '-l {filter_bed} -a -A'
+                           '-o {pickles_dir}/{each_sample}_{runmode}.mpileup').format(
+                               fa_file = fa_file, 
+                               infile_name = infile_name, 
+                               filter_bed = filter_bed, 
+                               pickles_dir = pickles_dir, 
+                               each_sample = each_sample, 
+                               runmode = runmode) 
         else:
-            bashCommand = ('samtools mpileup -B -f {} {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)     
-        print(bashCommand)            
+            #bashCommand = ('samtools mpileup -B -f {} {} -a -A -o {}/{}_{}.mpileup').format(fa_file, infile_name, pickles_dir, each_sample, runmode)
+            bashCommand = ('samtools mpileup -B -f {fa_file} {infile_name} '
+                           '-a -A -o {pickles_dir}/{each_sample}_{runmode}.mpileup').format(
+                               fa_file = fa_file, 
+                               infile_name = infile_name, 
+                               pickles_dir = pickles_dir, 
+                               each_sample = each_sample, 
+                               runmode = runmode)
+        print(bashCommand)
         subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)       
 
 def populate_filter_dict(chromo, start, stop, region):    
@@ -1473,26 +1586,30 @@ def build_trace(subz_df, suby_df, each_type, c_median, g_median):
         
                     depth += depth_2
                     
-                    depth_median = np.mean(depth)
+                    depth_median = np.median(depth)
                     depth_std = np.std(depth)
+                    depth_sum = np.sum(depth)
+                    
+                    lower_bound = 1/abs(stop-start)
 
                     for nt in range(start, stop+1):
                         seed_set.add(nt)
                                                 
                     if (start >= 0) and (stop >= 0):
-                        rel_c = depth_median/float(c_median)
-                        rel_g = depth_median/float(g_median)
+                        rel_c = depth_median/(max(float(c_median),lower_bound))
+                        rel_g = depth_median/(max(float(g_median),lower_bound))
                         
                         outline = ('{chromo}\t{each_type}_depth\tCNV'
-                                   '\t{start}\t{stop}\t{sum_d}\t.\t.'
-                                   '\tID={chromo}:{start}-{stop};rel_chromosome_RD={rel_c};rel_genome_RD={rel_g};sample={sample}\n'
+                                   '\t{start}\t{stop}\t{depth_median}\t.\t.'
+                                   '\tID={chromo}:{start}-{stop};rel_chromosome_RD={rel_c};rel_genome_RD={rel_g};read_count={depth_sum};sample={sample}\n'
                                    ).format(
                                        chromo = every_chromo, 
                                        each_type = each_type, 
                                        start = start, stop=stop, 
-                                       sum_d = np.mean(depth),
+                                       depth_median = depth_median,
                                        rel_c = round(rel_c,2), 
-                                       rel_g = round(rel_g,2), 
+                                       rel_g = round(rel_g,2),
+                                       depth_sum = depth_sum,
                                        sample = each_sample)
                         
                         depth_gff_outfile.write(outline)
@@ -1528,7 +1645,7 @@ def get_seq(seq_file_name):
     seq_dict[seq] += 1
     
     if len(seq_dict) > 1:
-        print('get_seq(seq_file_name)')
+        print('error get_seq(seq_file_name)')
         print(seq_file_name)
         print(seq_dict)
         1/0
@@ -1927,77 +2044,6 @@ def make_anchor_regions(nt_set, gap):
     else:
         return(region_dict)
 
-# def make_otherside_regions(chromo, region_dict, chromo_hypothesis_dict, chromo_anchor_contig_dict, gap):
-#     '''
-#     The key premise here is that there are two types of reads 
-#     1. will be a read with unique matches on both sides (2 anchors), this is a trivial case
-#     2. a read with only one unique match (1 anchors) one variable.
-    
-#     In the second case it can be informative to ask two questions:
-#         a. what are all the variable loci the anchor maps to?
-#         b. what is the relative read depth of those loci?
-        
-#     When a read is aligned the anchor(s) nucelotides (both read and reference) should be identified as should the read depth weighted variable.
-#     The anchor and variables should then be read out. 
-#     ''' 
-#     global global_hypothesis_dict
-
-#     for region_number in region_dict:
-#         start = region_dict[region_number]['start']
-#         stop = region_dict[region_number]['stop']
-        
-#         contig_set = set()
-#         for nt in range(start, stop+1):
-#             if nt in chromo_anchor_contig_dict:
-#                 for contig in chromo_anchor_contig_dict[nt]:
-#                     contig_set.add(contig)
-        
-#         if len(contig_set) < 1:
-#             print(contig_set)
-#             print(chromo, start, stop)
-#             1/0
-        
-#         for nt in range(start, stop+1):
-#             if nt in chromo_hypothesis_dict:                
-#                 for otherside_chromo in chromo_hypothesis_dict[nt]:
-#                     next_nt_list = []
-#                     for next_nt in chromo_hypothesis_dict[nt][otherside_chromo]:
-#                         next_nt_list.append(next_nt)
-                        
-#                     next_region_dict = make_anchor_regions(next_nt_list, gap)
-                    
-#                     for next_region in next_region_dict:                       
-#                         next_bs_list = []
-#                         next_start = next_region_dict[next_region]['start']
-#                         next_stop = next_region_dict[next_region]['stop']
-                        
-#                         for next_nt in range(next_start, next_stop+1):
-#                             #because of gaps not all nt may be present for scoring, these will be counted as a 0
-#                             if next_nt in chromo_hypothesis_dict[nt][otherside_chromo]:
-#                                 next_bs_list.append(chromo_hypothesis_dict[nt][otherside_chromo][next_nt])
-#                             else:
-#                                 next_bs_list.append(0)
-                        
-#                         score = round(np.median(next_bs_list))
-                                                
-#                         uid = len(global_hypothesis_dict)
-#                         global_hypothesis_dict[uid] = {"anchor_chromo":chromo, 
-#                                                                "anchor_start":start,
-#                                                                "anchor_stop":stop,
-#                                                                "other_chromo":otherside_chromo,
-#                                                                "other_start":next_start,
-#                                                                "other_stop":next_stop,
-#                                                                "score":score,
-#                                                                "contig":contig_set,
-#                                                                "checked":False,
-#                                                                "combined_with":False,
-#                                                                "replaced_by":False
-#                                                                }
-                        
-                        
-                                
-#     return() 
-
 def fourway_test(uid_start, next_start, uid_stop, next_stop, gap):
     #print("uid_start, next_start, uid_stop, next_stop, gap")
     #print(uid_start, next_start, uid_stop, next_stop, gap)
@@ -2057,12 +2103,6 @@ def collapse_select_set(uid, next_uid):
                   'other':'anchor'}
     
     if (uid != next_uid):
-        print('uid', uid)
-        print(global_hypothesis_dict[uid])
-        print()
-        print('next_uid', next_uid)
-        print(global_hypothesis_dict[next_uid])
-        print()
         
         for site in sites_dict:
             site_uid_chromo = ('{}_chromo').format(site)
@@ -2086,30 +2126,21 @@ def collapse_select_set(uid, next_uid):
                 next_o_chromo = global_hypothesis_dict[next_uid][site_next_o_chromo]
                 
                 if (uid_chromo == next_chromo) and (uid_o_chromo == next_o_chromo):
-                    print('pass chromo check')
                     
                     uid_start=global_hypothesis_dict[uid][site_uid_start]
                     uid_stop=global_hypothesis_dict[uid][site_uid_stop]
                     next_start=global_hypothesis_dict[next_uid][site_next_start]
                     next_stop=global_hypothesis_dict[next_uid][site_next_stop]
-                    
-                    print("uid_start, uid_stop", uid_start, uid_stop)
-                    print("next_start, next_stop", next_start, next_stop)
+
                     
                     if fourway_test(uid_start, next_start, uid_stop, next_stop, resgap):
-                        print('pass n fourway check')
                         
                         uid_o_start=global_hypothesis_dict[uid][site_uid_o_start]
                         uid_o_stop=global_hypothesis_dict[uid][site_uid_o_stop]
                         next_o_start=global_hypothesis_dict[next_uid][site_next_o_start]
                         next_o_stop=global_hypothesis_dict[next_uid][site_next_o_stop] 
-                                                
-                        print("uid_o_start, uid_o_stop", uid_o_start, uid_o_stop)
-                        print("next_o_start, next_o_stop", next_o_start, next_o_stop)
-                                                
+                                                                                                
                         if fourway_test(uid_o_start, next_o_start, uid_o_stop, next_o_stop, resgap):
-                            print('pass o fourway check')
-                                
                             return(True)
                         
     return(False)
@@ -2182,13 +2213,7 @@ def nested_collapse():
                             
                             return(True)
                     
-                    # outline = ("Testing {} {}").format(uid, next_uid)
-                    # print(outline)
-                    
                     if (uid != next_uid):
-                        
-                        # outline = ("Testing {} {}").format(uid, next_uid)
-                        # print(outline)
                         
                         for site in sites_dict:
                             site_uid_chromo = ('{}_chromo').format(site)
@@ -2226,7 +2251,6 @@ def nested_collapse():
                                         if fourway_test(uid_o_start, next_o_start, uid_o_stop, next_o_stop, resgap):
                                             new_score = sum([global_hypothesis_dict[uid]['score'], global_hypothesis_dict[next_uid]['score']])
                                                               
-                                            #TODO fix contig update to take the combined form
                                             new_contig_set = global_hypothesis_dict[uid]['contig']
                                             
                                             if not isinstance(new_contig_set, set):
@@ -2234,7 +2258,6 @@ def nested_collapse():
                                             
                                             for contig in global_hypothesis_dict[next_uid]['contig']:
                                                 new_contig_set.add(contig)
-                                                print()
                                                                             
                                             to_add_dict = {"anchor_chromo":uid_chromo, 
                                                             "anchor_start":min(int(uid_start), int(next_start)),
@@ -2279,9 +2302,7 @@ def last_pass():
             (not global_hypothesis_dict[uid]['checked'])
             ):
             temp_set.add(uid)
-                            
-    print('temp_set', len(temp_set))
-             
+                         
     reduced = nested_collapse()               
     
     if reduced:
@@ -2295,16 +2316,14 @@ def last_pass():
             (not global_hypothesis_dict[uid]['combined_with']) or 
             (not global_hypothesis_dict[uid]['checked'])
             ):
-            print(uid, global_hypothesis_dict[uid])
+
             temp_set.add(uid)
                 
     for uid in temp_set:
         for next_uid in temp_set:
             if uid != next_uid:
                 select_set_results = collapse_select_set(uid, next_uid)
-                print('uid, next_uid', uid, next_uid)
-                print('select_set_results', select_set_results)
-                
+
                 if select_set_results:
                     reduced = nested_collapse()               
                     
@@ -2314,20 +2333,9 @@ def last_pass():
     return(False)
 
 def collapse_hypotheses():
-    print ("in collapse_hypotheses")
+    # print ("in collapse_hypotheses")
     global global_hypothesis_dict
-    
-    # for chromo in otherside_dict:
-    #     for uid in otherside_dict[chromo]:
-    #         if uid not in global_hypothesis_dict:
-    #             global_hypothesis_dict[uid] = otherside_dict[chromo][uid]
-    #             global_hypothesis_dict[uid]['checked'] = False
-    #         else:
-    #             print(uid, chromo, global_hypothesis_dict[uid])
-    #             print('present', otherside_dict[chromo][uid])
-    #             1/0
-                
-    #new_uid = original_size+1
+
     reduced = True
     
     while reduced:
@@ -2527,6 +2535,26 @@ def get_details(anchor_chromo, anchor_start, anchor_stop,
     
     return(details)
 
+def pv_weight(peak_values, anchor_chromo, anchor_start, anchor_stop, score, resolution_gap):
+    
+    read_count, depth_median, rel_chromosome_rd = 0, 0, 0
+    
+    for seek_uid in peak_values:
+        seek_chromo = peak_values[seek_uid]['chromo']
+        seek_start = peak_values[seek_uid]['start']
+        seek_stop = peak_values[seek_uid]['stop']
+                
+        if anchor_chromo == seek_chromo:    
+            combine = fourway_test(anchor_start, seek_start, anchor_stop, seek_stop, resolution_gap)
+            
+            if combine:
+                peak_values[seek_uid]['overlap_with_others'] = True
+                depth_median = peak_values[seek_uid]["depth_median"]
+                rel_chromosome_rd = peak_values[seek_uid]["rel_chromosome_rd"]
+                read_count = peak_values[seek_uid]["read_count"]
+
+    return(read_count, depth_median, rel_chromosome_rd)
+
 def return_higher_cn(m_chromo_df, nuc, cnv_min_length, c_median):
     if c_median == 0:
         return(1)
@@ -2578,12 +2606,79 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
     '''
     Summarize hypotheses 
     '''
+    is_verbose = resource_dict['verbose']
+    total_discordant_read_ct = max(resource_dict['total_discordant_read_ct'],1)
+        
+    resolution_gap = resource_dict['resolution_gap']
+    
+    peak_values = {}
+    for each_type in set(["split"]):
+    #for each_type in set(["discordant", "split"]):
+        col_name = ('{}_peaks_gff_filename').format(each_type)
+        depth_gff_file_name = resource_dict[col_name]
+        
+        peak_file = open(depth_gff_file_name)
+        
+        for line in peak_file:
+            #'{chromo}\tRead_Depth\tCNV\t{start}\t{stop}\t{depth_median}\t.\t.\tID={chromo}:{start}-{stop};rel_chromosome_RD={rel_c};rel_genome_RD={rel_g};read_count={read_ct};sample={sample}\n'
+            if line[0] != '#':
+                peak_uid = len(peak_values)
+                
+                chromo = line.split('\t')[0]
+                start = int(line.split('\t')[3])
+                stop = int(line.split('\t')[4])
+                
+                depth_median = float(line.split('\t')[5])
+                
+                if 'read_count=' in line:
+                    read_count = float(line.split("read_count=")[1].split(";")[0])
+                else:
+                    read_count = 1
+                    
+                if 'rel_chromosome_RD=' in line:
+                    rel_chromosome_rd = float(line.split("rel_chromosome_RD=")[1].split(";")[0])
+                else:
+                    rel_chromosome_rd = 1
+                    
+                if 'rel_genome_RD=' in line:
+                    rel_genome_rd = float(line.split("rel_genome_RD=")[1].split(";")[0])
+                else:
+                    rel_genome_rd = 1
+                    
+                unique = True
+                
+                for seek_uid in peak_values:
+                    seek_chromo = peak_values[seek_uid]['chromo']
+                    seek_start = peak_values[seek_uid]['start']
+                    seek_stop = peak_values[seek_uid]['stop']
+                    
+                    if chromo == seek_chromo:    
+                        combine = fourway_test(start, seek_start, stop, seek_stop, resolution_gap)
+                        
+                        if combine:
+                            unique = False
+                            peak_values[seek_uid]["read_count"] += read_count
+                            peak_values[seek_uid]["depth_median"] += read_count
+                            
+                            peak_values[seek_uid]["rel_chromosome_rd"] += rel_chromosome_rd
+                            peak_values[seek_uid]["rel_genome_rd"] += rel_genome_rd
+                            
+                if unique:                   
+                    peak_values[peak_uid] = {"chromo": chromo,
+                                        "start": start,
+                                        "stop": stop,
+                                        "depth_median": depth_median,
+                                        "read_count": read_count,
+                                        "rel_chromosome_rd": rel_chromosome_rd,
+                                        "rel_genome_rd": rel_genome_rd,
+                                        "overlap_with_others": False}
     
     cnv_min_length = resource_dict['cnv_min_length']
     
     pickle_name = resource_dict['mpileup_df_RD']
     mpileup_df = pickle_loader(pickle_name, 'df')   
     
+    #no need to gunzip
     if 'original_genome_fa' in resource_dict:
         fa_file = resource_dict['original_genome_fa']
     else:
@@ -2607,19 +2702,13 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
             feature_map_p = resource_dict['feature_map']
             feature_map = pickle_loader(feature_map_p, 'dict')
             
-            # with open(feature_map_p, 'rb') as fp:
-            #     feature_map = pickle.load(fp)
         else:
             feature_map = False
     else:
         feature_map = False
     
-    #resource_dict['bam_file']
-    
     chromo_size_p = resource_dict['chromo_size']
     chromo_size_dict = pickle_loader(chromo_size_p, 'dict')
-    # with open(chromo_size_p, 'rb') as fp:
-    #     chromo_size_dict = pickle.load(fp)
         
     chromo_list = list(chromo_size_dict.keys())
     chromo_list.sort()
@@ -2658,10 +2747,47 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
                   '##source=cvish\n'
                   '##reference={fa_file}\n').format(
                       today=today, fa_file=fa_file)
-    
+                      
     #while the vcf records are still handled by the vcf_set
     vcf_set = set()
-    gff_set = set()                  
+    gff_set = set() 
+        
+    '''
+    # Handles excluded regions imported from file
+    '''                  
+    exclude_regions_filename = resource_dict['exclude_regions_file']
+    
+    if exclude_regions_filename != 'False':
+        exclude_regions_file = open(exclude_regions_filename)
+        ct = 0 
+        
+        for line in exclude_regions_file:
+            if (line[0] != '#') or ('excluded' in line):
+                # XIV	625851	625860	YNL003C.625851.625860.Tt	0.9999979734420776	-
+                chromo, start, stop, name, dot1, dot2 = line.split('\t')
+                uid = ('{}_{}').format(name, ct)
+                
+                if is_verbose:
+                    filter_char = ''
+                else:
+                    filter_char = '#'
+                
+                gff_line = ('{filter_char}{chromo}\tcvish\tregion_excluded'
+                            '\t{start}\t{stop}\t.\t.\t0'
+                            '\tnode_uid={uid};filter={filter_deet}\n').format(
+                                filter_char = filter_char,
+                                chromo = chromo,
+                                uid = uid,
+                                start = start,
+                                stop = stop,
+                                filter_deet = 'excluded_by_region')
+                                
+                gff_set.add(gff_line)
+                
+        exclude_regions_file.close()
+        
+    '''
+    '''
 
     print("Starting hypothesis reduction ...")
     good_ct = set()
@@ -2671,8 +2797,6 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
             bad_ct.add(uid)
         else:
             good_ct.add(uid)
-    print('good_ct', len(good_ct))
-    print('bad_ct', len(bad_ct))
         
     collapse_hypotheses()
     
@@ -2694,10 +2818,20 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
             score = global_hypothesis_dict[uid]['score']
             contig_set = global_hypothesis_dict[uid]['contig']
             
+            read_count_a, depth_median_a, rel_chromosome_rd_a = pv_weight(peak_values, anchor_chromo, anchor_start, anchor_stop, score, resolution_gap)
+            read_count_b, depth_median_b, rel_chromosome_rd_b = pv_weight(peak_values, other_chromo, other_start, other_stop, score, resolution_gap)
+            
+            #read_count = read_count_a + read_count_b
+            depth_median = depth_median_a + depth_median_b
+            #rel_chromosome_rd = rel_chromosome_rd_a + rel_chromosome_rd_b
+            
+            score += depth_median
+            
             score = cn_weight(mpileup_df, anchor_chromo, anchor_start, anchor_stop, score, cnv_min_length)
             score = cn_weight(mpileup_df, other_chromo, other_start, other_stop, score, cnv_min_length)
             score = sv_weight(score, anchor_chromo, anchor_start, anchor_stop, other_chromo, other_start, other_stop, chromo_size_dict)
-            score = score/1000
+            
+            score = int(round(10*(score/total_discordant_read_ct),0))
                             
             otherside = ('{other_chromo}:{other_start}-{other_stop}').format(
                 other_chromo = other_chromo,
@@ -2721,15 +2855,14 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
                                min_confidence_score = min_confidence_score)
                 print(outline)
                     
-            if score > 0:
-                #print('Adding breakpoint ...')
-
+            if (score > 1) or (is_verbose):
                 details = get_details(anchor_chromo, anchor_start, anchor_stop,
                                       other_chromo, other_start, other_stop, 
                                       cn_dict, feature_map)
                 
                 filter_char = ''
                 filter_deet = 'PASS'
+                
                 if score < min_confidence_score:
                     filter_char = '#'
                     filter_deet = 'FILTER'
@@ -2743,7 +2876,8 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
             
                 gff_line = ('{filter_char}{chromo}\tcvish\t{uid}_anchor_split'
                             '\t{start}\t{stop}\t.\t.\t{score}'
-                            '\tnode_uid={uid};filter={filter_deet};otherside={otherside}_breeze;{details};contig={contig}\n').format(
+                            '\tnode_uid={uid};filter={filter_deet};otherside={otherside}_breeze;{details};contig={contig};'
+                            'read_weight={read_count};rel_chromosome_rd={rel_chromosome_rd};depth_median={depth_median}\n').format(
                                 filter_char = filter_char,
                                 chromo = anchor_chromo,
                                 uid = uid,
@@ -2753,7 +2887,10 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
                                 filter_deet = filter_deet,
                                 otherside = otherside,
                                 details = details,
-                                contig = contig)
+                                contig = contig,
+                                read_count = read_count_a,
+                                rel_chromosome_rd = rel_chromosome_rd_a,
+                                depth_median = depth_median_a)
                                 
                 gff_set.add(gff_line)
                 
@@ -2778,7 +2915,8 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
         
                 rev_gff_line = ('{filter_char}{filter_char}{chromo}\tcvish\t{uid}_breeze_split'
                             '\t{start}\t{stop}\t.\t.\t{score}'
-                            '\tnode_uid={uid};filter={filter_deet};otherside={anchorside};{details};contig={contig}\n').format(
+                            '\tnode_uid={uid};filter={filter_deet};otherside={anchorside};{details};contig={contig};'
+                            'read_weight={read_count};rel_chromosome_rd={rel_chromosome_rd};depth_median={depth_median}\n').format(
                                 filter_char = filter_char,
                                 chromo = other_chromo,
                                 uid = uid,
@@ -2788,7 +2926,10 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
                                 filter_deet = filter_deet,
                                 anchorside = anchorside,
                                 details = details,
-                                contig = contig)
+                                contig = contig,
+                                read_count = read_count_b,
+                                rel_chromosome_rd = rel_chromosome_rd_b,
+                                depth_median = depth_median_b)
                 
                 gff_set.add(rev_gff_line)
                 
@@ -2805,7 +2946,85 @@ def summarize_hypotheses(hypothesis_dict, anchor_contig_dict, gap, resource_dict
                                 dp = int(score))
                                 
                 vcf_set.add(vcf_line)
+                
+    for peak_uid in peak_values:
+        #
+        if True:
+        #if peak_values[peak_uid]["overlap_with_others"]:
+            chromo = peak_values[peak_uid]["chromo"]
+            start = peak_values[peak_uid]["start"]
+            stop = peak_values[peak_uid]["stop"]
             
+            read_count = peak_values[peak_uid]["read_count"]
+            rel_chromosome_rd += peak_values[peak_uid]["rel_chromosome_rd"]
+            depth_median = peak_values[peak_uid]["depth_median"]
+            
+            score = read_count
+            
+            score = int(round(10*(score/total_discordant_read_ct),0))
+            
+            if (score < min_confidence_score) or (rel_chromosome_rd <= min_confidence_score):
+                outline = ('Filtering peak hypothesis {peak_uid} for low confidence score.'
+                           ' Score:{score}, minimum: {min_confidence_score}').format(
+                               peak_uid = peak_uid,
+                               score = score,
+                               min_confidence_score = min_confidence_score)
+                              
+                print(outline)
+            
+            #
+            if (score > 1) or (is_verbose):
+                details = 'peak_detected_no_unique_sequence'
+                
+                filter_char = ''
+                filter_deet = 'PASS'
+                
+                if (score < min_confidence_score) or (rel_chromosome_rd <= min_confidence_score):
+                    filter_char = '#'
+                    filter_deet = 'FILTER'
+                    
+                    outline = ('Filtering peak hypothesis {uid} for low confidence score.'
+                               ' Score:{score}, minimum: {min_confidence_score}').format(
+                                   uid = uid,
+                                   score = score,
+                                   min_confidence_score = min_confidence_score)
+                    print(outline)
+            
+                gff_line = ('{filter_char}{chromo}\tcvish\t{uid}_peak'
+                            '\t{start}\t{stop}\t.\t.\t{score}'
+                            '\tnode_uid=peak_{uid};filter={filter_deet};otherside={otherside};'
+                            '{details};contig={contig};read_count={read_count};'
+                            'rel_chromosome_rd={rel_chromosome_rd};depth_median={depth_median}\n').format(
+                                filter_char = filter_char,
+                                chromo = chromo,
+                                uid = peak_uid,
+                                start = start,
+                                stop = stop,
+                                score = score,
+                                filter_deet = filter_deet,
+                                otherside = "unknown",
+                                details = details,
+                                contig = "na",
+                                read_count = read_count,
+                                rel_chromosome_rd = rel_chromosome_rd,
+                                depth_median = depth_median)
+                                
+                gff_set.add(gff_line)
+                
+                vcf_line = ('{filter_char}{chromo}\t{pos}\tpeak_{uid}'
+                            '\tN\t{alt}\t60\t{filter_deet}\tSVMETHOD=cvish;OTHERSIDE={info}'
+                            '\tGT:GQ:DP\t.:.:{dp}\n').format(
+                                filter_char = filter_char,
+                                chromo = chromo,
+                                pos = start,
+                                uid = peak_uid,
+                                info = "unknown",
+                                alt = ".",
+                                filter_deet = filter_deet,
+                                dp = score)
+                                
+                vcf_set.add(vcf_line)
+                            
     return(gff_set, gff_header, vcf_set, vcf_header)
 
 def parse_msa_file(filename, hash_to_name, msa_dict):
@@ -2905,7 +3124,6 @@ def check_for_alignment(seq1, seq2):
         q_file_name = q_file_name, json_file_name = json_file_name, s_file_name=s_file_name)
     
     subprocess.run([bashCommand],stderr=subprocess.STDOUT,shell=True)
-    #print(bashCommand)
     
     results = parse_json_for_eval(json_file_name)
 
@@ -2948,7 +3166,6 @@ def build_subclusters(msa_dict, combined_set, check_list, prefix_dict):
                     combined_set.add(each_name2)
                     
                     outline = ('>{}\n{}\n').format(name2, msa_dict[name2])
-                    #print('outline: ', outline)
                     cluster_seq.write(outline)
                     
                 cluster_seq.close()                    
@@ -2971,8 +3188,6 @@ def build_subclusters(msa_dict, combined_set, check_list, prefix_dict):
                 print(bashCommand)
                     
                 seq_str = get_prefilter_sequence(cluster_seq_name)
-                
-                 
                 
                 if len(seq_str) > 25:
                     prefix = ('{temp}/{node_name}').format(temp=temp_dir, node_name=node_name)
@@ -3001,7 +3216,6 @@ def build_clusters(hypo, msa_dict, contig_seq_dict):
         if (cluster not in combined_set):
             if (cluster not in initial_set):
                 node_name = ('{hypo}_{cluster}').format(hypo=hypo, cluster=cluster)
-                #cluster_seq_name = ('{temp}/{node_name}_cluster_seq.fa').format(node_name=node_name, temp=temp_dir)
                 prefix = prefix_dict[cluster]
                 prefix_set.add(prefix)
                 
@@ -3048,7 +3262,6 @@ def find_hypo(locus_to_hypo_lookup, chromo, start, stop):
         region_name = str(chromo + '_' + str(is_nt))
 
         if region_name in locus_to_hypo_lookup:
-            #hypo_id = locus_to_hypo_lookup[region_name]
             return(locus_to_hypo_lookup[region_name])
     
     #In the event the hypo falls within a filtered region find_hypo returns a negative
@@ -3103,7 +3316,7 @@ def load_peaks(peaks_file_name, region_filter_dict):
     
     peaks_dict = {}
     for line in peaks_file:
-        #'{chromo}\tRead_Depth\tCNV\t{start}\t{stop}\t{rel_c}\t.\t.\tID={chromo}:{start}-{stop};rel_chromosome_RD={rel_c};rel_genome_RD={rel_g};sample={sample}\n'
+        #'{chromo}\tRead_Depth\tCNV\t{start}\t{stop}\t{rel_c}\t.\t.\tID={chromo}:{start}-{stop};rel_chromosome_RD={rel_c};rel_genome_RD={rel_g};read_count={read_ct};sample={sample}\n'
         chromo = line.split('\t')[0]
         start = int(line.split('\t')[3])
         stop = int(line.split('\t')[4])
@@ -3161,7 +3374,6 @@ def map_alignments(uid, uid_align, alignment_map, hypothesis_map, ancestor_filte
         if uni_uid_instance not in alignment_map:
             alignment_map[uni_uid_instance] = [chromo, start, stop, qscore, cigar]
         
-        #small sanity check here
         else:
             p_chromo = uid_align[0]
             p_start = uid_align[1]
@@ -3177,9 +3389,6 @@ def refine_alignment(uni_uid, alignment, alignment_map, runmode, locus_to_hypo_l
     if alignment:
         q_uid = ('{}_{}').format(runmode, uni_uid)
         chromo, start, stop, qscore, cigar = alignment_map[alignment]
-        # print('refine_alignment')
-        # print(alignment)
-        # print(alignment_map[alignment])
         breakpoint_hypothesis = find_hypo(locus_to_hypo_lookup, chromo, start, stop)
 
         if breakpoint_hypothesis:
@@ -3199,9 +3408,9 @@ if args.load_configuration_file:
         resource_dict['run_name'])
     print(outline)
     
-# TODO making make_template_file
 if args.make_template_file:
     outfile_name = args.make_template_file
+    
     #initialize resources object and file:
     resource_dict = {'run_name':'REQUIRED: USER DEFINED',
                      'genome_fa':'REQUIRED: USER DEFINED',
@@ -3209,6 +3418,7 @@ if args.make_template_file:
                      'fastq_2':'REQUIRED: USER DEFINED',
                      'verbose':args.verbose,
                      'with_disco':args.with_disco,
+                     'exclude_regions_file':args.exclude_regions_file,
                      'depth_region_filter':args.depth_filter_bed,
                      'ref_gff':args.ref_gff_file,
                      'ref_gff_feature':args.ref_gff_feature,
@@ -3264,9 +3474,20 @@ if args.load_sequences:
     """
     #get parameters:
     resource_dict = io_load()
-    #print(resource_dict)
     
     fa_file = resource_dict['genome_fa']
+    
+    if fa_file[-3:]=='.gz':
+        postgz_fa_file = fa_file[:-3]
+        if '/' in postgz_fa_file:
+            postgz_fa_file = postgz_fa_file.rsplit('/',1)[0]
+            
+        postgz_fa_file = temp_dir + '/' + fa_file[:-3]
+        
+        degzip(fa_file, postgz_fa_file)
+        
+        resource_dict['genome_fa'] = postgz_fa_file
+    
     ref_gff_file = resource_dict['ref_gff']
     gff_feature_name = resource_dict['gff_feature_name']
     fastq_1 = resource_dict['fastq_1']
@@ -3295,7 +3516,7 @@ if args.load_sequences:
                 
         fa_file = temp_fa_file
         
-        outline = ('bwa index {fa_file}\n').format(fa_file = fa_file)
+        outline = ('bwa index -a bwtsw {fa_file}\n').format(fa_file = fa_file)
         command_file.write(outline)
             
     ref_fa=('genome_fa={}\n').format(fa_file)
@@ -3304,6 +3525,10 @@ if args.load_sequences:
          
     infastq_1=('fastq_1={}\n').format(fastq_1)
     infastq_2=('fastq_2={}\n').format(fastq_2)
+    
+    mapq = resource_dict['mapq_val']
+    outline = ('mapq={}\n').format(mapq)
+    command_file.write(outline)
         
     output_filename = ('output_file={bam_dir}/{output_file}\n'
                      'mkdir -p {bam_dir}\n'
@@ -3312,20 +3537,46 @@ if args.load_sequences:
         output_file=output_file)
                          
     command_file.write(ref_fa + ref_gff + ref_gff_feature_name + infastq_1 + infastq_2 + output_filename)
-    outline = ('bwa mem -M -t 16 ${genome_fa} ${fastq_1} ${fastq_2} | samblaster -M -e -d ${output_file}_discordant.sam -s ${output_file}_split.sam | samtools sort -@16 -o ${output_file}.bam\n')
+    outline = ('bwa mem -M -t 16 ${genome_fa} ${fastq_1} ${fastq_2} > ${output_file}_samp.sam\n' +
+               "samtools view -h -q ${mapq} ${output_file}_samp.sam > ${output_file}_mapq.sam\n" )
+    command_file.write(outline)
+    
+    exclude_regions_file = resource_dict['exclude_regions_file']
+
+    if exclude_regions_file !='False':
+        if len(exclude_regions_file) > 0:
+            outline = ("#\nexclude_regions_file={}\n#\n").format(exclude_regions_file)
+            command_file.write(outline)
+            outline = ("samtools view ${output_file}_mapq.sam -h -o ${output_file}_inRegions.sam -U ${output_file}_excluded.sam -L ${exclude_regions_file}\n" +
+                       "rm -f ${output_file}_inRegions.sam\n" +
+                       "samtools view -bT ${genome_fa} ${output_file}_mapq.sam -o ${output_file}_mapq_pre_excluded.bam\n" +
+                       "mv ${output_file}_excluded.sam ${output_file}_mapq.sam\n")
+            command_file.write(outline)            
+    
+    outline = ("samblaster -i ${output_file}_mapq.sam --ignoreUnmated -M -e -d ${output_file}_discordant.sam -s ${output_file}_split.sam -o /dev/null\n")
     command_file.write(outline)
 
-    outline = ('bedtools genomecov -ibam ${output_file}.bam -bg > ${output_file}.bedGraph\n'+
-    'samtools index ${output_file}.bam\n'+
-    'samtools view -h ${output_file}.bam -o ${output_file}.sam\n'+
-    'samtools view -bT ${genome_fa} ${output_file}_discordant.sam > ${output_file}_discordant_u.bam\n'+
-    'samtools sort -T tmp_sort -o ${output_file}_discordant.bam ${output_file}_discordant_u.bam\n'+
-    'samtools index ${output_file}_discordant.bam\n'+
-    'samtools view -bT ${genome_fa} ${output_file}_split.sam > ${output_file}_split_u.bam\n'+
-    'samtools sort -T tmp_sort -o ${output_file}_split.bam ${output_file}_split_u.bam\n'+
-    'samtools index ${output_file}_split.bam\n'+
-    'rm ${output_file}_discordant_u.bam\n'+
-    'rm ${output_file}_split_u.bam\n\n')
+    outline = ("samtools view -bT ${genome_fa} ${output_file}_mapq.sam -o ${output_file}_u.bam\n" +
+               "samtools sort -@16 -o ${output_file}.bam ${output_file}_u.bam\n" +
+               "samtools index ${output_file}.bam\n" +
+               "bedtools genomecov -ibam ${output_file}.bam -bg > ${output_file}.bedGraph\n" +
+               "mv ${output_file}_mapq.sam ${output_file}.sam\n" +
+               "#\n" +
+               "samtools view -bT ${genome_fa} ${output_file}_discordant.sam > ${output_file}_discordant_u.bam\n" +
+               "samtools sort -T tmp_sort -o ${output_file}_discordant.bam ${output_file}_discordant_u.bam\n" +
+               "samtools index ${output_file}_discordant.bam\n" +
+               "samtools view -c -F 4 ${output_file}_discordant.bam > ${output_file}_discordant.count\n" +
+               "#\n" +
+               "samtools view -bT ${genome_fa} ${output_file}_split.sam > ${output_file}_split_u.bam\n" +
+               "samtools sort -T tmp_sort -o ${output_file}_split.bam ${output_file}_split_u.bam\n" +
+               "samtools index ${output_file}_split.bam\n" +
+               "samtools view -c -F 4 ${output_file}_split.bam > ${output_file}_split.count\n" +
+               "#\n" +
+               "rm -f ${output_file}_u.bam\n" +
+               "rm -f ${output_file}_discordant_u.bam\n" +
+               "rm -f ${output_file}_split_u.bam\n" +
+               "#\n")
+    
     command_file.write(outline)
     command_file.close()
     
@@ -3355,14 +3606,26 @@ if args.load_sequences:
     resource_dict['chromo_set'] = set(chromo_size_dict.keys())
             
     resource_dict['command_file_name'] = command_file_name
-    
+    #bam file
     resource_dict['bam_file'] = (bam_dir+output_file+str('.bam'))
     resource_dict['discordant_file'] = (bam_dir+output_file+str('_discordant.bam'))
     resource_dict['split_file'] = (bam_dir+output_file+str('_split.bam'))    
-    
+    #sam file
     resource_dict['sam_file'] = (bam_dir+output_file+str('.sam'))
     resource_dict['discordant_sam_file'] = (bam_dir+output_file+str('_discordant.sam'))
     resource_dict['split_sam_file'] = (bam_dir+output_file+str('_split.sam'))
+    
+    resource_dict['discordant_count_file'] = (bam_dir+output_file+str('_discordant.count'))
+    resource_dict['split_count_file'] = (bam_dir+output_file+str('_split.count'))
+    
+    total_discordant_read_ct = 0 
+    for each in set(['split_count_file']):
+        infile = open(resource_dict[each])
+        
+        for line in infile:
+            total_discordant_read_ct += float(line.strip())
+    
+    resource_dict['total_discordant_read_ct'] = total_discordant_read_ct
     
     resource_dict['chromo_size']=(pickle_name)
     
@@ -3389,7 +3652,7 @@ if args.depth_analysis:
     
     filter_chromosome_set = resource_dict['filter_chromosome']        
     ref_gff = resource_dict['ref_gff']
-
+        
     #Build boolean check for depth_filter_bed 
     filter_by_bed = convert_bool(depth_filter_bed)
     if not isinstance(filter_by_bed, bool):
@@ -3411,7 +3674,7 @@ if args.depth_analysis:
         print('\tParsing mpileup into chromosomes...')
         run_mpileup(infile_name, each_sample, each_type, filter_by_bed, depth_filter_bed)
 
-        populated=False
+        populated = False
         mpileup_df = []
         raw_mpileup = str(pickles_dir + '/' + each_sample + '_' + each_type + '.mpileup')
         temp_df = pd.read_csv(raw_mpileup, sep='\t', header=None, names = ['chromo', 'nuc', 'base', 'ct', 'val1', 'val2'])
@@ -3450,22 +3713,28 @@ if args.depth_analysis:
         resource_dict[zscore_read_type] = fg_std
         
         if each_type == 'RD' and ref_gff:
-            if (fg_median != 0) and (fg_mean != 0) and (fg_std != 0):
-                cn_dict, feature_map = make_gene_by_gene_copy_number(each_sample, ref_gff, fg_median, fg_mean, fg_std, mpileup_df)
+            if (fg_median == 0):
+                fg_median = 1
+                print('Global read depths median is zero, depth analysis is only an estimate.')
+            if (fg_mean == 0):
+                fg_mean = 1
+                print('Global read depths mean is zeros, depth analysis is only an estimate.')
+            if (fg_std == 0):
+                fg_std = 1
+                print('Global read depths mean is zeros, depth analysis is only an estimate.')
+            
+            cn_dict, feature_map = make_gene_by_gene_copy_number(each_sample, ref_gff, fg_median, fg_mean, fg_std, mpileup_df)
+            
+            pickle_name = ('{}/cn_dict_{}.p').format(pickles_dir, each_sample)
+            with open(pickle_name, "wb") as fp:
+                pickle.dump(cn_dict, fp)        
+            resource_dict['cn_dict'] = pickle_name
+            
+            pickle_name = ('{}/feature_map_{}.p').format(pickles_dir, each_sample)
+            with open(pickle_name, "wb") as fp:
+                pickle.dump(feature_map, fp)       
+            resource_dict['feature_map'] = pickle_name  
                 
-                pickle_name = ('{}/cn_dict_{}.p').format(pickles_dir, each_sample)
-                with open(pickle_name, "wb") as fp:
-                    pickle.dump(cn_dict, fp)        
-                resource_dict['cn_dict'] = pickle_name
-                
-                pickle_name = ('{}/feature_map_{}.p').format(pickles_dir, each_sample)
-                with open(pickle_name, "wb") as fp:
-                    pickle.dump(feature_map, fp)       
-                resource_dict['feature_map'] = pickle_name  
-                
-            else:
-                print('Global read depths mean, median, standard deviation include zeros, skipping relative depth analysis.')
-        
     io_append(resource_dict)
         
 """ Step Three """
@@ -3494,8 +3763,11 @@ if args.peaks:
     for each_type in read_type_list:
         print('Processing ', each_type)
         
-        depth_gff_file_name = ('{}/{}_{}_depth.gff').format(final_output_dir, each_sample, each_type)
+        depth_gff_file_name = ('{}/{}_{}_peaks.gff').format(final_output_dir, each_sample, each_type)
         depth_gff_outfile = open(depth_gff_file_name,'w')
+        
+        col_name = ('{}_peaks_gff_filename').format(each_type)
+        resource_dict[col_name] = depth_gff_file_name
         
         chromo_gff_file_name = ('{}/{}_{}_chromosome.gff').format(final_output_dir, each_sample, each_type)
         chromo_gff_outfile = open(chromo_gff_file_name,'w')
@@ -3508,7 +3780,7 @@ if args.peaks:
         g_mean = resource_dict[zscore_read_type]
         zscore_read_type = ('{}_zscore_std').format(each_type)
         g_std = resource_dict[zscore_read_type]
-                        
+                                
         outline = ('Global Median:\t{}\nGlobal Std:\t{}\n').format(g_mean,g_std)
         print(outline)
          
@@ -3529,11 +3801,11 @@ if args.peaks:
     
             if each_type == 'RD':
                 fzero = m_chromo_df.replace(0, np.NaN)
-                c_median = fzero["ct"].mean()
+                c_median = fzero["ct"].median()
                 c_std = fzero["ct"].std()
                 
             else:
-                c_median = m_chromo_df["ct"].mean()
+                c_median = m_chromo_df["ct"].median()
                 c_std = m_chromo_df["ct"].std()              
             
             #this selects nts with more than some zscore of depth
@@ -3541,20 +3813,20 @@ if args.peaks:
                 subz_df = m_chromo_df.loc[(m_chromo_df["ct"] >= (c_median + 3*c_std))]
                 suby_df = m_chromo_df.loc[m_chromo_df["ct"] >= (c_median + c_std)]
                 
-                build_trace(subz_df, suby_df, each_type, c_mean, g_mean)
+                build_trace(subz_df, suby_df, each_type, c_median, g_mean)
                 
             if each_type == 'disco' or each_type == 'discordant':
                 subz_df = m_chromo_df.loc[(m_chromo_df["ct"] >= (c_median + 3*c_std))]
                 suby_df = m_chromo_df.loc[m_chromo_df["ct"] >= (c_median + c_std)]
             
-                build_trace(subz_df, suby_df, each_type, c_mean, g_mean)
+                build_trace(subz_df, suby_df, each_type, c_median, g_mean)
             
             # this detects deletions in the DNA depth, independant of discordance
             if each_type == 'RD':
                 subz_df = m_chromo_df.loc[(m_chromo_df["ct"]) == 0]
                 suby_df = m_chromo_df.loc[(m_chromo_df["ct"]) == 0]
                 
-                build_trace(subz_df, suby_df, each_type, c_mean, g_mean)
+                build_trace(subz_df, suby_df, each_type, c_median, g_mean)
                                 
         depth_gff_outfile.close()
         chromo_gff_outfile.close()
@@ -3596,8 +3868,6 @@ if args.map_reads:
     sw = resource_dict['split_weight']
     dw = resource_dict['disco_weight']
         
-    # with open(chromo_size_pickle, 'rb') as fp:
-    #     chromo_size_dict = pickle.load(fp)
     chromo_size_dict = pickle_loader(chromo_size_pickle, 'dict')
     
     derived_score = (resource_dict['split_zscore_median'] + resource_dict['split_zscore_std']) * sw
@@ -3641,14 +3911,18 @@ if args.map_reads:
     for runmode in read_type_list:        
         if runmode == 'discordant' or runmode == 'disco':
             print('Parsing discordant reads...')
-            read_file_name = discordant_sam_file        
-            peaks_file_name = ('{}/{}_discordant_depth.gff').format(final_output_dir, output_file)
-        
+            read_file_name = discordant_sam_file
+            
+            col_name = ('discordant_peaks_gff_filename')
+            peaks_file_name = resource_dict[col_name]
+                    
         if runmode == 'split':
             print('Parsing split reads...')
             read_file_name = split_sam_file
-            peaks_file_name = ('{}/{}_split_depth.gff').format(final_output_dir, output_file)
-        
+            
+            col_name = ('split_peaks_gff_filename')
+            peaks_file_name = resource_dict[col_name]
+                    
         #filter_by_peaks:
         #keys: chromo, values: sets of nucleotides
         peaks_dict = load_peaks(peaks_file_name, region_filter_dict)
@@ -3851,10 +4125,7 @@ if args.map_reads:
     hypo_ct = 0
     locus_to_hypo_lookup = {} 
     
-    for each_chromo, aligned_set in chromo_walk_dict.items():  
-        # if each_chromo not in locus_to_hypo_lookup:
-        #     locus_to_hypo_lookup[each_chromo] = {}
-             
+    for each_chromo, aligned_set in chromo_walk_dict.items():             
         if len(aligned_set) > 0:
             min_chromo = min(aligned_set)
             max_chromo = max(aligned_set)
@@ -3902,10 +4173,6 @@ if args.map_reads:
             
                     
             for uid in uni_uid_set:
-                #print(uni_uid)
-                #1/0
-                #uid = uni_uid.rsplit('.',1)[0]
-                
                 uni_ct += 1
                 
                 if uid in hypothesis_map:
@@ -3917,12 +4184,7 @@ if args.map_reads:
                             if alignment not in processed_alignments:
                                 processed_alignments.add(alignment)
                                 
-                                #before = len(refined_map)
                                 refined_map = refine_alignment(uid, alignment, alignment_map, runmode, locus_to_hypo_lookup, refined_map)
-                                #after = len(refined_map)
-                                
-                                #if before != after:
-                                #    print('before, after', before, after)
                     
                 else:
                     uids_that_were_filtered.add(uid)
@@ -3950,8 +4212,6 @@ if args.map_reads:
     resource_dict['break_tab'] = False
     
     for breakpoint_hypothesis, uid_list in refined_map.items():
-
-        #print(breakpoint_hypothesis)
         process_brks_1 = True
         
         hypo_side = int(breakpoint_hypothesis)
@@ -3966,7 +4226,6 @@ if args.map_reads:
             
             
             if len(uid_list) > 1:
-                #1/0
                 split_ct = 0
                 disco_ct = 0
 
@@ -3976,13 +4235,7 @@ if args.map_reads:
                 temp_uid_dict = {}
 
                 for each in uid_list:
-                    # if each.count('_') == 1:
                     runmode, uid = each.split('_',1)
-                        
-                    # else:
-                    #     print(each)
-                    #     1/0
-                    #     runmode, uid = each.split('_', 1)
                         
                     if uid not in temp_uid_dict:
                         temp_uid_dict[uid] = set()
@@ -4000,7 +4253,6 @@ if args.map_reads:
                         uid_str += ('discordant_{},').format(uid)
                                         
                 uid_str = uid_str.rsplit(',',1)[0]
-                #print('temp_uid_dict', temp_uid_dict)
                 
                 if len(temp_uid_dict) >= 2: 
                     s_weight = sw * split_ct
@@ -4130,12 +4382,12 @@ if args.call_breakpoints:
     
     # TODO use resource
     break_tab = ('{}/break_bt.tab').format(temp_dir)
-    #resource_dict['max_eval']
 
     """parse_brks:
     This recovers the loci from the hypothesized breakpoints identified in earlier
     steps.
     """
+    
     if 'break_tab' not in resource_dict:
         print("No potential breakpoints found in the -map step.")
         
@@ -4245,12 +4497,8 @@ if args.call_breakpoints:
     print(outline)
     
     bam_dir = resource_dict['bam_dir']
-    #temp_dir = resource_dict['temp_dir']
     pickles_dir = resource_dict['pickles_dir']
-    
-    # vcf_file_name = ('{}/{}_SV_CNV.vcf').format(final_output_dir, output_file)
-    # vcf_file = open(vcf_file_name,'w')
-    
+        
     bashCommand = ('mv {bam_dir}/*.bam* {final_output_dir}/').format(
         bam_dir = bam_dir, final_output_dir = final_output_dir)
     print(bashCommand)       
