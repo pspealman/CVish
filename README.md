@@ -21,7 +21,7 @@ python cvish.py -run -fa <reference_genome.fa> -fastq_1 <n01_fastq.gz> -fastq_2 
  ### Requirements
  CVish intends to be a requirement lite tool and as such is contained entirely in single python script. It requires the following programs to be installed in the environment:
 
-  * python	(tested on version: 3.8.6)
+  * python	(tested on version: 3.8.6) [package requirements: os, argparse, subprocess, pickle, pandas, numpy, json, re, datetime, scipy.stats, warnings]
   * bwa		(tested on version: 0.7.17) **NB** bwa is required and is not compatible with bwa-mem2 
   * samtools	(tested on version: 1.14)
   * bedtools	(tested on version: 2.29.2)
@@ -29,6 +29,7 @@ python cvish.py -run -fa <reference_genome.fa> -fastq_1 <n01_fastq.gz> -fastq_2 
   * samblaster	(tested on version: 0.1.26)
   * mafft	(tested on version: 7.475)
   * emboss	(tested on version: 6.6.0)
+  
     
  ### Install and run preparation:
  ```
