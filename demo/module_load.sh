@@ -1,3 +1,4 @@
+module load python/intel/3.8.6
 module load bwa/intel/0.7.17
 module load samtools/intel/1.14
 module load bedtools/intel/2.29.2
