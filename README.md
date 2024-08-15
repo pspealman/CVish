@@ -5,7 +5,7 @@ A **C**opy-number **V**ariant and Structural Variant finder for short read seque
 
 __Important Step Zero for NYU HPC users__
  ```
- srun -c 1 -t 1:00:00 -mem 100000 --pty /bin/bash
+ srun -c 1 -t 1:00:00 --mem 100000 --pty /bin/bash
  # or use -run with the -sbatch demo/sbatch_template.txt argument to run with sbatch
  source demo/module_load.sh
  ```
