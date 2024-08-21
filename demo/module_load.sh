@@ -6,4 +6,3 @@ module load blast+/2.11.0
 module load samblaster/0.1.26
 module load mafft/intel/7.475
 module load emboss/intel/6.6.0
-module load bcftools/intel/1.14
